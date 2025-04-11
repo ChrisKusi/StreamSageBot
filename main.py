@@ -635,7 +635,7 @@ executor = ThreadPoolExecutor(max_workers=4)
 # Define constants
 MAX_VIDEO_SIZE = 50 * 1024 * 1024  # 50MB limit for Telegram
 MAX_PREMIUM_SIZE = 100 * 1024 * 1024  # 100MB for premium users
-SUPPORTED_PLATFORMS = ["YouTube", "TikTok", "Twitter", "Instagram", "Facebook", "Twitch", "Reddit"]
+SUPPORTED_PLATFORMS = ["TikTok", "Twitter", "Instagram", "Facebook", "Twitch", "Reddit"]  # Removed YouTube
 PREMIUM_FEATURES = ["Video Generation", "Image Generation", "Larger File Downloads", "Batch Processing", "Priority Support"]
 
 async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, **kwargs):
@@ -838,26 +838,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
         except Exception as e:
             logger.error(f"Error fetching video info: {e}")
-            error_msg = str(e)
-            if "429" in error_msg or "Sign in" in error_msg:
-                await context.bot.edit_message_text(
-                    chat_id=update.message.chat_id,
-                    message_id=context.user_data['processing_msg_id'],
-                    text=(
-                        "⚠️ YouTube is rate-limiting or requires sign-in for this video.\n"
-                        "Try again later or use a different link.\n"
-                        "Public videos should still work!"
-                    )
-                )
-            else:
-                await context.bot.edit_message_text(
-                    chat_id=update.message.chat_id,
-                    message_id=context.user_data['processing_msg_id'],
-                    text="❌ Sorry, I couldn’t process this URL. Make sure it's from a supported platform."
-                )
+            await context.bot.edit_message_text(
+                chat_id=update.message.chat_id,
+                message_id=context.user_data['processing_msg_id'],
+                text="❌ Sorry, I couldn’t process this URL. Make sure it's from a supported platform."
+            )
     else:
         await update.message.reply_text(
-            "Please send me a valid video URL from platforms like YouTube, TikTok, Twitter, etc.\n\n"
+            "Please send me a valid video URL from platforms like TikTok, Twitter, etc.\n\n"
             "Use /help for complete instructions."
         )
 
@@ -1024,28 +1012,23 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
                     'postprocessors': [{
                         'key': 'FFmpegVideoConvertor',
                         'preferedformat': 'mp4',
-                    }, {
-                        'key': 'FFmpegPostProcessor',  # Additional strict re-encoding
-                        'when': 'after_move',
                     }],
                     'postprocessor_args': {
                         'FFmpegVideoConvertor': [
                             '-c:v', 'libx264',          # H.264 video codec
-                            '-profile:v', 'main',       # Main profile for compatibility
-                            '-level', '3.1',            # Level 3.1 for broad support
+                            '-profile:v', 'main',       # Main profile for WhatsApp
+                            '-level', '3.1',            # Level 3.1 for compatibility
                             '-preset', 'medium',        # Balance speed and quality
                             '-b:v', '2M',               # Video bitrate 2Mbps
                             '-c:a', 'aac',              # AAC audio codec
                             '-b:a', '128k',             # Audio bitrate 128kbps
                             '-ar', '44100',             # Sample rate 44.1kHz
                             '-vf', 'scale=1280:720',    # Scale to 720p if needed
-                            '-movflags', '+faststart',  # Optimize for streaming
-                        ],
-                        'FFmpegPostProcessor': [
-                            '-map', '0:v:0',            # Map first video stream
-                            '-map', '0:a:0?',           # Map first audio stream (if exists)
+                            '-map', '0:v:0',            # Keep first video stream
+                            '-map', '0:a:0?',           # Keep first audio stream (if exists)
                             '-map', '-0:s',             # Remove subtitles
                             '-map', '-0:d',             # Remove data streams
+                            '-movflags', '+faststart',  # Optimize for streaming
                         ]
                     },
                 })
@@ -1108,23 +1091,11 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
 
     except Exception as e:
         logger.error(f"Download failed: {e}")
-        error_msg = str(e)
-        if "429" in error_msg or "Sign in" in error_msg:
-            await context.bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=message_id,
-                text=(
-                    "⚠️ YouTube rate limit hit or sign-in required.\n"
-                    "Try again later or use a different link.\n"
-                    "Public videos should work without issues!"
-                )
-            )
-        else:
-            await context.bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=message_id,
-                text=f"❌ Download failed: {str(e)}"
-            )
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=f"❌ Download failed: {str(e)}"
+        )
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Log errors and send user-friendly messages."""
