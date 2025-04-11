@@ -71,22 +71,22 @@
 #     user = update.effective_user
 #     welcome_message = (
 #         f"🌟 *Welcome {user.first_name} to the Ultimate Media Bot!* 🌟\n\n"
-#         "I'm your all-in-one solution for media downloading. Here's what I can do:\n\n"
-#         "🎥 *Video Downloader* - Download videos from various platforms\n"
-#         "🎵 *Audio Extractor* - Convert videos to high-quality MP3\n"
-#         "📊 *Media Info* - Get detailed information about any video\n\n"
-#         "💎 *Premium Features Coming Soon*\n"
-#         "🔹 *How to use:*\n"
-#         "1. Send me a video URL\n"
-#         "2. Choose your preferred format\n"
-#         "3. Get your media instantly!\n\n"
-#         "📌 *Available Commands:*\n"
-#         "/start - Show this welcome message\n"
-#         "/help - Detailed help and instructions\n"
-#         "/about - Bot information and credits\n"
-#         "/features - List all available features\n"
-#         "/premium - Learn about premium options\n\n"
-#         "Try me out by sending a video link now!"
+        # "I'm your all-in-one solution for media downloading. Here's what I can do:\n\n"
+        # "🎥 *Video Downloader* - Download videos from various platforms\n"
+        # "🎵 *Audio Extractor* - Convert videos to high-quality MP3\n"
+        # "📊 *Media Info* - Get detailed information about any video\n\n"
+        # "💎 *Premium Features Coming Soon*\n"
+        # "🔹 *How to use:*\n"
+        # "1. Send me a video URL\n"
+        # "2. Choose your preferred format\n"
+        # "3. Get your media instantly!\n\n"
+        # "📌 *Available Commands:*\n"
+        # "/start - Show this welcome message\n"
+        # "/help - Detailed help and instructions\n"
+        # "/about - Bot information and credits\n"
+        # "/features - List all available features\n"
+        # "/premium - Learn about premium options\n\n"
+        # "Try me out by sending a video link now!"
 #     )
     
 #     keyboard = [
@@ -1227,7 +1227,9 @@ executor = ThreadPoolExecutor(max_workers=4)
 
 # Constants
 MAX_VIDEO_SIZE = 50 * 1024 * 1024
+MAX_PREMIUM_SIZE = 100 * 1024 * 1024
 SUPPORTED_PLATFORMS = ["TikTok", "Twitter", "Instagram", "Facebook", "Twitch", "Reddit"]
+PREMIUM_FEATURES = ["Video Generation", "Image Generation", "Larger File Downloads", "Batch Processing", "Priority Support"]
 SNAPTIK_URL = "https://snaptik.app/en"
 
 async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, **kwargs):
@@ -1249,41 +1251,115 @@ async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text: s
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     welcome_message = (
-        f"🌟 *Welcome {user.first_name}!*\n\n"
-        "🎥 *Videos* - WhatsApp-ready\n"
-        "🖼️ *Images* - High-quality\n"
-        "🎵 *Audio* - MP3\n\n"
-        "Send a URL!\n/help for more"
+        f"🌟 *Welcome {user.first_name} to the Ultimate Media Bot!* 🌟\n\n"
+        "I'm your all-in-one solution for media downloading. Here's what I can do:\n\n"
+        "🎥 *Video Downloader* - Download videos from various platforms\n"
+        "🎵 *Audio Extractor* - Convert videos to high-quality MP3\n"
+        "📊 *Media Info* - Get detailed information about any video\n\n"
+        "💎 *Premium Features Coming Soon*\n"
+        "🔹 *How to use:*\n"
+        "1. Send me a video URL\n"
+        "2. Choose your preferred format\n"
+        "3. Get your media instantly!\n\n"
+        "📌 *Available Commands:*\n"
+        "/start - Show this welcome message\n"
+        "/help - Detailed help and instructions\n"
+        "/about - Bot information and credits\n"
+        "/features - List all available features\n"
+        "/premium - Learn about premium options\n\n"
+        "Try me out by sending a video link now!"
     )
-    keyboard = [[InlineKeyboardButton("❓ Help", callback_data="quick_help")]]
+    keyboard = [
+        [InlineKeyboardButton("📋 Features List", callback_data="features_list"),
+         InlineKeyboardButton("❓ How To Use", callback_data="quick_help")],
+        [InlineKeyboardButton("🔗 Supported Sites", callback_data="supported_sites")]
+    ]
     await safe_reply(update, context, welcome_message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
-        "📚 *Help*\n\n"
-        "/start - Welcome\n"
-        "/help - This\n"
-        "/about - Info\n\n"
-        f"Supports: {', '.join(SUPPORTED_PLATFORMS)}\n"
-        "Send a URL, pick an option!"
+        "📚 *Complete Help Guide*\n\n"
+        "*Basic Commands:*\n"
+        "/start - Welcome message\n"
+        "/help - This help guide\n"
+        "/about - Bot information\n"
+        "/features - List all features\n"
+        "/premium - Premium subscription info\n\n"
+        "*How to Download Videos:*\n"
+        "1. Send me a video URL from any supported platform\n"
+        "2. I'll detect it automatically and show options\n"
+        "3. Choose to download as video or audio\n"
+        "4. Wait for processing (usually takes a few seconds)\n"
+        "5. Receive your file directly in chat\n\n"
+        "*Supported Platforms:*\n"
+        f"{', '.join(SUPPORTED_PLATFORMS)}\n\n"
+        "*Advanced Features:*\n"
+        "• Multiple quality options (for supported platforms)\n"
+        "• Video information extraction (duration, views, etc.)\n"
+        "• High-quality audio extraction (up to 320kbps)\n\n"
+        "⚠️ *Limitations:*\n"
+        "• Free users: 50MB file size limit\n"
+        "• Some platforms may have restrictions\n\n"
+        "Need more help? Just send me a message!"
     )
     await safe_reply(update, context, help_text, parse_mode='Markdown')
 
 async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     about_text = (
-        "🤖 *Ultimate Media Bot*\n"
-        "*Version:* 1.0.4\n"
-        "*By:* Christian Kusi\n"
-        "SnapTik + yt-dlp powered"
+        "🤖 *Ultimate Media Bot*\n\n"
+        "*Version:* 1.0.0\n"
+        "*Last Updated:* April 2025\n\n"
+        "*Core Features:*\n"
+        "• Video downloading from 50+ platforms\n"
+        "• Audio extraction with quality options\n"
+        "• Video information display\n\n"
+        "*Technologies Used:*\n"
+        "• Python 3.10+\n"
+        "• python-telegram-bot\n"
+        "• yt-dlp (video extraction)\n"
+        "• FFmpeg (media processing)\n\n"
+        "*Developer:*\n"
+        "Christian Kusi\n\n"
+        "This bot is actively maintained and updated regularly with new features!"
     )
     await safe_reply(update, context, about_text, parse_mode='Markdown')
+
+async def features_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    features_text = (
+        "✨ *All Available Features*\n\n"
+        "*Current Features:*\n"
+        "• Video downloading from supported platforms\n"
+        "• Audio extraction (MP3 format)\n"
+        "• Video information display\n"
+        "• Quality selection (when available)\n"
+        "• 50MB file size limit\n\n"
+        "*Coming Soon:*\n"
+        f"• {' | '.join(PREMIUM_FEATURES)}\n"
+        "• 100MB file size limit\n"
+        "• Priority processing\n"
+        "• Batch downloads\n\n"
+        "Stay tuned for updates!"
+    )
+    await safe_reply(update, context, features_text, parse_mode='Markdown')
+
+async def premium_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    premium_text = (
+        "💎 *Premium Features Coming Soon!*\n\n"
+        "We're working hard to bring you these exciting features:\n\n"
+        f"• {' | '.join(PREMIUM_FEATURES)}\n"
+        "• Larger file downloads (up to 100MB)\n"
+        "• Faster processing times\n"
+        "• Batch processing\n\n"
+        "Check back soon for updates on our premium offerings!\n\n"
+        "For now, enjoy our free features - they're pretty awesome too!"
+    )
+    await safe_reply(update, context, premium_text, parse_mode='Markdown')
 
 def is_valid_url(url: str) -> bool:
     url_pattern = re.compile(r'^(https?://)?([A-Z0-9-]+\.)+[A-Z]{2,6}(:\d+)?(/.*)?$', re.IGNORECASE)
     return bool(url_pattern.match(url))
 
 async def get_snaptik_download_url(tiktok_url: str) -> str:
-    """Fetch watermark-free TikTok video URL from SnapTik."""
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15'}
         data = {'url': tiktok_url}
@@ -1300,7 +1376,10 @@ async def get_snaptik_download_url(tiktok_url: str) -> str:
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message_text = update.message.text
     if not is_valid_url(message_text):
-        await update.message.reply_text("Send a valid URL.\n/help for help.")
+        await update.message.reply_text(
+            "Please send me a valid video URL from platforms like TikTok, Twitter, etc.\n\n"
+            "Use /help for complete instructions."
+        )
         return
     
     context.user_data['current_url'] = message_text
@@ -1318,32 +1397,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if download_url:
                 info_dict = {
                     'title': 'TikTok Video',
-                    'duration': 0,  # SnapTik doesn’t provide duration
+                    'duration': 0,
                     'extractor': 'TikTok',
-                    'is_image': False,
                     'download_url': download_url
                 }
             else:
                 raise Exception("SnapTik failed, falling back to yt-dlp")
-        else:
-            with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
-                info_dict = await loop.run_in_executor(executor, lambda: ydl.extract_info(message_text, download=False))
-                info_dict['is_image'] = 'thumbnail' in info_dict and not info_dict.get('duration')
+        with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+            info_dict = await loop.run_in_executor(executor, lambda: ydl.extract_info(message_text, download=False))
         
         context.user_data['video_info'] = info_dict
-        keyboard = []
-        if info_dict.get('duration', 0) or platform != "TikTok":
-            keyboard.append([InlineKeyboardButton("🎬 Video", callback_data="video"),
-                             InlineKeyboardButton("🎵 Audio", callback_data="audio")])
-        if info_dict.get('is_image', False):
-            keyboard.append([InlineKeyboardButton("🖼️ Image", callback_data="image")])
-        keyboard.append([InlineKeyboardButton("ℹ️ Info", callback_data="info"),
-                         InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+        keyboard = [
+            [InlineKeyboardButton("🎬 Download Video", callback_data="video"),
+             InlineKeyboardButton("🎵 Download Audio (MP3)", callback_data="audio")],
+            [InlineKeyboardButton("ℹ️ Video Info", callback_data="info"),
+             InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
+        ]
+        duration = info_dict.get('duration')
+        duration_str = f"{int(duration // 60)}:{int(duration % 60):02d}" if duration else "Unknown"
         
         await context.bot.edit_message_text(
             chat_id=update.message.chat_id,
             message_id=processing_msg.message_id,
-            text=f"📋 *Found*\n*Title:* {info_dict.get('title', 'Media')}\n*Source:* {info_dict.get('extractor', 'Unknown')}\n\nSelect:",
+            text=f"📋 *Video Found*\n\n*Title:* {info_dict.get('title', 'Video')}\n*Duration:* {duration_str}\n*Source:* {info_dict.get('extractor', 'Unknown')}\n\nSelect an option to continue:",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
@@ -1351,88 +1427,120 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error: {e}")
         if platform == "TikTok":
-            # Fallback to yt-dlp for TikTok
             try:
                 with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
                     info_dict = await loop.run_in_executor(executor, lambda: ydl.extract_info(message_text, download=False))
-                    info_dict['is_image'] = 'thumbnail' in info_dict and not info_dict.get('duration')
                     context.user_data['video_info'] = info_dict
                     keyboard = [
-                        [InlineKeyboardButton("🎬 Video", callback_data="video"),
-                         InlineKeyboardButton("🎵 Audio", callback_data="audio")],
-                        [InlineKeyboardButton("ℹ️ Info", callback_data="info"),
+                        [InlineKeyboardButton("🎬 Download Video", callback_data="video"),
+                         InlineKeyboardButton("🎵 Download Audio (MP3)", callback_data="audio")],
+                        [InlineKeyboardButton("ℹ️ Video Info", callback_data="info"),
                          InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
                     ]
+                    duration = info_dict.get('duration')
+                    duration_str = f"{int(duration // 60)}:{int(duration % 60):02d}" if duration else "Unknown"
                     await context.bot.edit_message_text(
                         chat_id=update.message.chat_id,
                         message_id=processing_msg.message_id,
-                        text=f"📋 *Found (yt-dlp)*\n*Title:* {info_dict.get('title', 'Media')}\n*Source:* TikTok\n\nSelect:",
+                        text=f"📋 *Video Found (yt-dlp)*\n\n*Title:* {info_dict.get('title', 'Video')}\n*Duration:* {duration_str}\n*Source:* TikTok\n\nSelect an option to continue:",
                         reply_markup=InlineKeyboardMarkup(keyboard),
                         parse_mode='Markdown'
                     )
             except Exception as e2:
                 await context.bot.edit_message_text(chat_id=update.message.chat_id, message_id=processing_msg.message_id,
-                                                    text="❌ TikTok failed with both SnapTik and yt-dlp.")
+                                                  text="❌ TikTok video failed with both SnapTik and yt-dlp.")
         else:
             await context.bot.edit_message_text(chat_id=update.message.chat_id, message_id=processing_msg.message_id,
-                                                text="❌ Failed to process URL.")
+                                              text="❌ Sorry, I couldn't process this URL. Make sure it's from a supported platform.")
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     if query.data == "cancel":
-        await query.edit_message_text("✅ Cancelled.")
+        await query.edit_message_text("✅ Operation cancelled.")
+        return
+    elif query.data == "features_list":
+        await features_command(update, context)
         return
     elif query.data == "quick_help":
         await help_command(update, context)
         return
+    elif query.data == "supported_sites":
+        sites_text = "📺 *Supported Platforms:*\n\n" + "\n".join(f"• {site}" for site in SUPPORTED_PLATFORMS)
+        await query.edit_message_text(sites_text, parse_mode='Markdown')
+        return
     
     url = context.user_data.get('current_url')
     if not url:
-        await query.edit_message_text("❌ Session expired.")
+        await query.edit_message_text("❌ Session expired. Please send the URL again.")
         return
     
     if query.data == "info":
         await show_media_info(query, context)
-    elif query.data in ["video", "audio", "image"]:
+    elif query.data in ["video", "audio"]:
         await start_download(query, context, query.data)
 
 async def show_media_info(query, context: ContextTypes.DEFAULT_TYPE):
     info_dict = context.user_data.get('video_info', {})
-    info_parts = ["📑 *Info*"]
-    for key, name in [("title", "Title"), ("duration", "Duration (m:s)")]:
-        value = info_dict.get(key)
-        if value:
-            if key == "duration":
-                value = f"{int(value // 60)}:{int(value % 60):02d}"
-            info_parts.append(f"*{name}:* {value}")
+    info_parts = ["📑 *Video Information*"]
     
-    keyboard = []
-    if info_dict.get('duration', 0):
-        keyboard.append([InlineKeyboardButton("🎬 Video", callback_data="video"),
-                         InlineKeyboardButton("🎵 Audio", callback_data="audio")])
-    if info_dict.get('is_image', False):
-        keyboard.append([InlineKeyboardButton("🖼️ Image", callback_data="image")])
-    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+    def add_field(name, value, formatter=None):
+        if value not in [None, 'Unknown', '']:
+            formatted = formatter(value) if formatter else str(value)
+            info_parts.append(f"*{name}:* {formatted}")
     
-    await query.edit_message_text("\n".join(info_parts), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+    add_field("Title", info_dict.get('title'))
+    duration = info_dict.get('duration')
+    if duration:
+        add_field("Duration", f"{int(duration // 60)}:{int(duration % 60):02d}")
+    add_field("Channel/Uploader", info_dict.get('uploader'))
+    
+    upload_date = info_dict.get('upload_date')
+    if upload_date and len(upload_date) == 8:
+        add_field("Upload Date", f"{upload_date[6:8]}/{upload_date[4:6]}/{upload_date[0:4]}")
+    
+    def format_count(count):
+        if isinstance(count, int):
+            return f"{count/1000000:.1f}M" if count >= 1000000 else f"{count/1000:.1f}K" if count >= 1000 else str(count)
+        return str(count)
+    
+    add_field("Views", info_dict.get('view_count'), format_count)
+    add_field("Likes", info_dict.get('like_count'), format_count)
+    add_field("Resolution", info_dict.get('resolution'))
+    add_field("FPS", info_dict.get('fps'))
+    
+    filesize = info_dict.get('filesize_approx')
+    if isinstance(filesize, (int, float)):
+        filesize_str = f"{filesize/1000000:.1f} MB" if filesize >= 1000000 else f"{filesize/1000:.1f} KB" if filesize >= 1000 else f"{filesize} bytes"
+        add_field("Estimated Size", filesize_str)
+    
+    if len(info_parts) == 1:
+        info_parts.append("\n⚠️ Couldn't retrieve detailed information")
+        info_parts.append("You can still try downloading the media")
+    
+    keyboard = [
+        [InlineKeyboardButton("🎬 Download Video", callback_data="video"),
+         InlineKeyboardButton("🎵 Download Audio", callback_data="audio")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
+    ]
+    
+    await query.edit_message_text("\n\n".join(info_parts), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 async def start_download(query, context: ContextTypes.DEFAULT_TYPE, format_type: str):
     url = context.user_data.get('current_url')
-    download_msg = await query.edit_message_text(f"⏳ Downloading {format_type}...")
+    download_msg = await query.edit_message_text(f"⏳ Starting {'audio' if format_type == 'audio' else 'video'} download...")
     asyncio.create_task(download_and_send_media(url, format_type, MAX_VIDEO_SIZE, context, query.message.chat_id, download_msg.message_id))
 
 async def download_and_send_media(url: str, format_type: str, max_size: int, 
-                                 context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int):
+                                context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int):
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
             platform = next((p for p in SUPPORTED_PLATFORMS if p.lower() in url.lower()), "Other")
-            file_path = os.path.join(temp_dir, f"media.{format_type if format_type != 'image' else 'mp4' if platform == 'TikTok' else 'jpg'}")
+            file_path = os.path.join(temp_dir, f"media.{format_type}")
             info_dict = context.user_data.get('video_info', {})
             
             if platform == "TikTok" and 'download_url' in info_dict and format_type == "video":
-                # Use SnapTik for TikTok video
                 response = await asyncio.get_event_loop().run_in_executor(
                     executor, lambda: requests.get(info_dict['download_url'], stream=True)
                 )
@@ -1440,48 +1548,52 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
                     for chunk in response.iter_content(1024):
                         f.write(chunk)
             else:
-                # Use yt-dlp for other cases
                 ydl_opts = {
                     'outtmpl': file_path,
                     'quiet': True,
-                    'format': 'bestvideo+bestaudio/best' if format_type == "video" else 'bestaudio/best' if format_type == "audio" else 'bestimage',
+                    'format': 'bestvideo+bestaudio/best' if format_type == "video" else 'bestaudio/best',
                 }
                 if format_type == "audio":
                     ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     await asyncio.get_event_loop().run_in_executor(executor, lambda: ydl.download([url]))
             
-            # WhatsApp compatibility for videos
             if format_type == "video":
                 output_file = os.path.join(temp_dir, "output.mp4")
                 subprocess.run([
-                    'ffmpeg', '-i', file_path, '-c:v', 'libx264', '-profile:v', 'main', '-level', '3.1',
-                    '-b:v', '1500k', '-maxrate', '2000k', '-bufsize', '4000k', '-c:a', 'aac', '-b:a', '128k',
-                    '-ar', '44100', '-vf', 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2',
-                    '-r', '30', '-f', 'mp4', '-movflags', '+faststart', output_file
+                    'ffmpeg', '-i', file_path, 
+                    '-c:v', 'libx264', '-profile:v', 'main', '-level', '3.1',
+                    '-b:v', '1500k', '-maxrate', '2000k', '-bufsize', '4000k',
+                    '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
+                    '-vf', 'scale=-2:1920:force_original_aspect_ratio=decrease',
+                    '-r', '30', '-f', 'mp4', '-movflags', '+faststart', 
+                    output_file
                 ], check=True)
                 file_path = output_file
 
             file_size = os.path.getsize(file_path)
-            if file_size > max_size and format_type != "image":
-                await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=f"⚠️ Too large ({file_size/1024/1024:.1f}MB)")
+            if file_size > max_size:
+                await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=f"⚠️ File too large ({file_size/1024/1024:.1f}MB > {max_size/1024/1024:.1f}MB limit)")
                 return
 
-            await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="✅ Uploading...")
+            await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="✅ Download complete! Now uploading...")
             with open(file_path, 'rb') as file:
                 if format_type == "audio":
-                    await context.bot.send_audio(chat_id=chat_id, audio=file, title=info_dict.get('title', 'Audio'))
-                elif format_type == "image":
-                    await context.bot.send_photo(chat_id=chat_id, photo=file, caption=f"🖼️ {info_dict.get('title', 'Image')}")
+                    await context.bot.send_audio(chat_id=chat_id, audio=file, 
+                                               title=info_dict.get('title', 'Audio'),
+                                               performer=info_dict.get('uploader', 'Unknown'),
+                                               duration=int(info_dict.get('duration', 0)))
                 else:
-                    await context.bot.send_video(chat_id=chat_id, video=file, caption=f"🎬 {info_dict.get('title', 'Video')}",
-                                                 duration=int(info_dict.get('duration', 0)), supports_streaming=True)
+                    await context.bot.send_video(chat_id=chat_id, video=file, 
+                                               caption=f"🎬 {info_dict.get('title', 'Video')}",
+                                               duration=int(info_dict.get('duration', 0)), 
+                                               supports_streaming=True)
             
             await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
 
     except Exception as e:
         logger.error(f"Download failed: {e}")
-        await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=f"❌ Failed: {str(e)}")
+        await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=f"❌ Download failed: {str(e)}")
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Error: {context.error}")
@@ -1489,7 +1601,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await asyncio.sleep(5)
         return
     if update.effective_chat:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Error. Try again.")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ An error occurred. Please try again later.")
 
 async def main():
     TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -1505,6 +1617,8 @@ async def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("about", about_command))
+    application.add_handler(CommandHandler("features", features_command))
+    application.add_handler(CommandHandler("premium", premium_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_error_handler(error_handler)
