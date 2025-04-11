@@ -1019,14 +1019,34 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
                 file_extension = "mp3"
             else:
                 ydl_opts.update({
-                    'format': 'bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/best',
+                    'format': 'bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/best',  # Prefer H.264 + AAC
                     'merge_output_format': 'mp4',
                     'postprocessors': [{
                         'key': 'FFmpegVideoConvertor',
                         'preferedformat': 'mp4',
+                    }, {
+                        'key': 'FFmpegPostProcessor',  # Additional strict re-encoding
+                        'when': 'after_move',
                     }],
                     'postprocessor_args': {
-                        'FFmpegVideoConvertor': ['-c:v', 'libx264', '-c:a', 'aac', '-b:a', '192k']
+                        'FFmpegVideoConvertor': [
+                            '-c:v', 'libx264',          # H.264 video codec
+                            '-profile:v', 'main',       # Main profile for compatibility
+                            '-level', '3.1',            # Level 3.1 for broad support
+                            '-preset', 'medium',        # Balance speed and quality
+                            '-b:v', '2M',               # Video bitrate 2Mbps
+                            '-c:a', 'aac',              # AAC audio codec
+                            '-b:a', '128k',             # Audio bitrate 128kbps
+                            '-ar', '44100',             # Sample rate 44.1kHz
+                            '-vf', 'scale=1280:720',    # Scale to 720p if needed
+                            '-movflags', '+faststart',  # Optimize for streaming
+                        ],
+                        'FFmpegPostProcessor': [
+                            '-map', '0:v:0',            # Map first video stream
+                            '-map', '0:a:0?',           # Map first audio stream (if exists)
+                            '-map', '-0:s',             # Remove subtitles
+                            '-map', '-0:d',             # Remove data streams
+                        ]
                     },
                 })
                 file_extension = "mp4"
@@ -1112,7 +1132,6 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if isinstance(context.error, Conflict):
         logger.warning("Conflict detected: Another instance might be running. Attempting to recover...")
-        # Attempt to recover by restarting polling after a delay
         await asyncio.sleep(5)
         return
     
