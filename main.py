@@ -1379,7 +1379,7 @@ async def get_tiksave_download_url(tiktok_url: str) -> str:
             
         json_data = response.json()
         if json_data.get('status') != 'success':
-            raise Exception("TikSave processing failed")
+            raise Exception(f"TikSave processing failed: {json_data.get('msg', 'Unknown error')}")
             
         soup = BeautifulSoup(json_data.get('data', ''), 'html.parser')
         download_link = soup.find('a', class_='btn-down')
@@ -1412,7 +1412,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         platform = next((p for p in SUPPORTED_PLATFORMS if p.lower() in message_text.lower()), "Other")
         
         if platform == "TikTok":
-            # Try TikSave first
             download_url = await get_tiksave_download_url(message_text)
             if download_url:
                 info_dict = {
@@ -1422,23 +1421,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     'download_url': download_url
                 }
             else:
-                # Fallback to yt-dlp for TikTok if TikSave fails
                 logger.info("TikSave failed, falling back to yt-dlp for TikTok")
                 try:
                     with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
                         info_dict = await loop.run_in_executor(executor, lambda: ydl.extract_info(message_text, download=False))
                 except Exception as e:
                     logger.error(f"yt-dlp fallback for TikTok failed: {e}")
-                    raise Exception("Both TikSave and yt-dlp failed for TikTok")
+                    raise Exception("Failed to process TikTok URL with both TikSave and yt-dlp")
         else:
-            # Use yt-dlp for all other platforms
             try:
                 with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
                     info_dict = await loop.run_in_executor(executor, lambda: ydl.extract_info(message_text, download=False))
             except Exception as e:
                 logger.error(f"yt-dlp failed for {platform}: {e}")
                 if "login required" in str(e).lower() or "rate-limit" in str(e).lower():
-                    raise Exception(f"{platform} requires login or hit rate limit. Try using /help for cookie instructions.")
+                    raise Exception(f"{platform} requires login or hit rate limit. See /help for cookie instructions.")
                 raise Exception(f"Failed to process {platform} URL: {str(e)}")
         
         context.user_data['video_info'] = info_dict
@@ -1556,7 +1553,7 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
             info_dict = context.user_data.get('video_info', {})
             
             if platform == "TikTok" and 'download_url' in info_dict and format_type == "video":
-                # Use TikSave download URL directly
+                # Use TikSave download URL directly, no FFmpeg processing needed
                 response = await asyncio.get_event_loop().run_in_executor(
                     executor, lambda: requests.get(info_dict['download_url'], stream=True, timeout=30)
                 )
@@ -1581,31 +1578,29 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
                         raise Exception(f"{platform} requires login or hit rate limit. See /help for cookie instructions.")
                     raise
                     
-            if format_type == "video":
-                output_file = os.path.join(temp_dir, "output.mp4")
-                try:
-                    if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
-                        raise Exception("Downloaded video file is empty or missing")
-                    
-                    process = subprocess.run([
-                        'ffmpeg', '-i', file_path, 
-                        '-c:v', 'libx264', '-preset', 'medium',
-                        '-c:a', 'aac', '-b:a', '128k',
-                        '-vf', 'scale=-2:720:force_original_aspect_ratio=decrease',
-                        '-f', 'mp4', '-y', output_file
-                    ], capture_output=True, text=True, timeout=60)
-                    
-                    if process.returncode != 0:
-                        logger.error(f"FFmpeg error: {process.stderr}")
-                        raise Exception(f"FFmpeg processing failed: {process.stderr}")
-                    
-                    file_path = output_file
-                except Exception as e:
-                    logger.error(f"FFmpeg processing failed: {e}")
-                    if os.path.exists(file_path):
-                        logger.info("Falling back to original video file")
-                    else:
-                        raise
+                if format_type == "video":
+                    output_file = os.path.join(temp_dir, "output.mp4")
+                    try:
+                        if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
+                            raise Exception("Downloaded video file is empty or missing")
+                        
+                        process = subprocess.run([
+                            'ffmpeg', '-i', file_path, 
+                            '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+                            '-f', 'mp4', '-y', output_file
+                        ], capture_output=True, text=True, timeout=60)
+                        
+                        if process.returncode != 0:
+                            logger.error(f"FFmpeg error: {process.stderr}")
+                            raise Exception(f"FFmpeg processing failed: {process.stderr}")
+                        
+                        file_path = output_file
+                    except Exception as e:
+                        logger.error(f"FFmpeg processing failed: {e}")
+                        if os.path.exists(file_path):
+                            logger.info("Falling back to original video file")
+                        else:
+                            raise
 
             file_size = os.path.getsize(file_path)
             if file_size > max_size:
@@ -1638,6 +1633,7 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Error: {context.error}")
     if isinstance(context.error, Conflict):
+        logger.warning("Conflict detected, retrying in 5 seconds...")
         await asyncio.sleep(5)
         return
     if update.effective_chat:
@@ -1663,25 +1659,27 @@ async def main():
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_error_handler(error_handler)
     
-    max_retries = 3
-    retry_delay = 5
+    max_retries = 5  # Increased retries
+    retry_delay = 10  # Increased delay
     
     for attempt in range(max_retries):
         try:
             await application.initialize()
             await application.start()
             await application.updater.start_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
-            logger.info("Bot running")
+            logger.info("Bot running successfully")
             while True:
                 await asyncio.sleep(3600)
         except Conflict as e:
             logger.error(f"Conflict {attempt + 1}/{max_retries}: {e}")
             if attempt < max_retries - 1:
+                logger.info(f"Retrying in {retry_delay} seconds...")
                 await asyncio.sleep(retry_delay)
                 continue
+            logger.error("Max retries reached, shutting down")
             break
         except Exception as e:
-            logger.error(f"Error: {e}")
+            logger.error(f"Unexpected error: {e}")
             break
         finally:
             try:
@@ -1697,6 +1695,6 @@ if __name__ == '__main__':
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Stopped")
+        logger.info("Stopped by user")
     except Exception as e:
-        logger.error(f"Fatal: {e}")
+        logger.error(f"Fatal error: {e}")
