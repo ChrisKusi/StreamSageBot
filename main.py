@@ -9,6 +9,20 @@ import re
 from typing import Dict, Any
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
+import threading
+from flask import Flask
+
+
+# Flask app for Render Web Service
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def home():
+    return "Stock Mentor Bot is running!"
+
+def run_flask():
+    flask_app.run(host='0.0.0.0', port=int(os.getenv("PORT", 8080)))
+
 
 # Load environment variables from .env file
 load_dotenv()
@@ -500,6 +514,12 @@ async def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_error_handler(error_handler)
+    
+    # Start Flask in a separate thread
+    threading.Thread(target=run_flask, daemon=True).start()
+    # Start Telegram bot polling with drop_pending_updates to avoid conflicts
+    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+
     
     # Run the bot with proper shutdown handling
     try:
