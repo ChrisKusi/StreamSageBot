@@ -3,6 +3,6 @@ services:
     name: StreamSageBoot
     env: python
     plan: free
-    buildCommand: "pip install -r requirements.txt"
+    buildCommand: "./build.sh"
     startCommand: "python main.py"
     autoDeploy: true
