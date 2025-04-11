@@ -2,3 +2,4 @@ tiktokBot.py
 .env
 .venv/
 .gitignore
+cookie.txt

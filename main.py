@@ -598,6 +598,7 @@ import os
 import tempfile
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
+from telegram.error import Conflict
 import asyncio
 import re
 from typing import Dict, Any
@@ -1018,14 +1019,14 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
                 file_extension = "mp3"
             else:
                 ydl_opts.update({
-                    'format': 'bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/best',  # Prefer H.264 + AAC
+                    'format': 'bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/best',
                     'merge_output_format': 'mp4',
                     'postprocessors': [{
                         'key': 'FFmpegVideoConvertor',
-                        'preferedformat': 'mp4',  # Ensure MP4 output
+                        'preferedformat': 'mp4',
                     }],
                     'postprocessor_args': {
-                        'FFmpegVideoConvertor': ['-c:v', 'libx264', '-c:a', 'aac', '-b:a', '192k']  # WhatsApp-compatible codecs
+                        'FFmpegVideoConvertor': ['-c:v', 'libx264', '-c:a', 'aac', '-b:a', '192k']
                     },
                 })
                 file_extension = "mp4"
@@ -1080,7 +1081,7 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
                             video=file,
                             caption=f"🎬 {info_dict.get('title', 'Video')}",
                             duration=int(info_dict.get('duration', 0)),
-                            supports_streaming=True  # Optimize for sharing
+                            supports_streaming=True
                         )
 
                 await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
@@ -1108,6 +1109,12 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Log errors and send user-friendly messages."""
     logger.error(f"Update {update} caused error {context.error}")
+    
+    if isinstance(context.error, Conflict):
+        logger.warning("Conflict detected: Another instance might be running. Attempting to recover...")
+        # Attempt to recover by restarting polling after a delay
+        await asyncio.sleep(5)
+        return
     
     if update.effective_chat:
         await context.bot.send_message(
@@ -1138,20 +1145,45 @@ async def main():
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_error_handler(error_handler)
     
-    # Start polling
-    await application.initialize()
-    await application.start()
-    await application.updater.start_polling(
-        drop_pending_updates=True,
-        allowed_updates=Update.ALL_TYPES
-    )
+    # Start polling with retry logic for conflicts
+    max_retries = 3
+    retry_delay = 5  # seconds
     
-    logger.info("Bot is now running with Flask web service")
-    
-    # Keep the application running
-    while True:
-        await asyncio.sleep(3600)  # Sleep for longer periods
-        
+    for attempt in range(max_retries):
+        try:
+            await application.initialize()
+            await application.start()
+            await application.updater.start_polling(
+                drop_pending_updates=True,
+                allowed_updates=Update.ALL_TYPES
+            )
+            
+            logger.info("Bot is now running with Flask web service")
+            
+            # Keep the application running
+            while True:
+                await asyncio.sleep(3600)  # Sleep for longer periods
+            
+        except Conflict as e:
+            logger.error(f"Conflict error on attempt {attempt + 1}/{max_retries}: {e}")
+            if attempt < max_retries - 1:
+                logger.info(f"Retrying in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+                continue
+            else:
+                logger.error("Max retries reached. Shutting down.")
+                break
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
+            break
+        finally:
+            try:
+                await application.updater.stop()
+                await application.stop()
+                await application.shutdown()
+            except Exception as shutdown_error:
+                logger.error(f"Error during shutdown: {shutdown_error}")
+
 if __name__ == '__main__':
     try:
         # Windows-specific event loop policy
