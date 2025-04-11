@@ -1230,7 +1230,7 @@ MAX_VIDEO_SIZE = 50 * 1024 * 1024
 MAX_PREMIUM_SIZE = 100 * 1024 * 1024
 SUPPORTED_PLATFORMS = ["TikTok", "Twitter", "Instagram", "Facebook", "Twitch", "Reddit"]
 PREMIUM_FEATURES = ["Video Generation", "Image Generation", "Larger File Downloads", "Batch Processing", "Priority Support"]
-SNAPTIK_URL = "https://snaptik.app/en"
+TIKSAVE_URL = "https://tiksave.io/en"
 
 async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, **kwargs):
     try:
@@ -1359,18 +1359,38 @@ def is_valid_url(url: str) -> bool:
     url_pattern = re.compile(r'^(https?://)?([A-Z0-9-]+\.)+[A-Z]{2,6}(:\d+)?(/.*)?$', re.IGNORECASE)
     return bool(url_pattern.match(url))
 
-async def get_snaptik_download_url(tiktok_url: str) -> str:
+async def get_tiksave_download_url(tiktok_url: str) -> str:
+    """Fetch TikTok video URL from TikSave."""
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15'}
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': TIKSAVE_URL,
+            'Origin': TIKSAVE_URL
+        }
         data = {'url': tiktok_url}
+        
+        # Get initial response
         response = await asyncio.get_event_loop().run_in_executor(
-            executor, lambda: requests.post(SNAPTIK_URL, data=data, headers=headers)
+            executor, 
+            lambda: requests.post(TIKSAVE_URL + '/api/ajaxSearch', data=data, headers=headers)
         )
-        soup = BeautifulSoup(response.text, 'html.parser')
-        download_link = soup.find('a', class_='download-file')
-        return download_link['href'] if download_link else None
+        
+        if response.status_code != 200:
+            raise Exception(f"TikSave request failed with status {response.status_code}")
+            
+        json_data = response.json()
+        if json_data.get('status') != 'success':
+            raise Exception("TikSave processing failed")
+            
+        soup = BeautifulSoup(json_data.get('data', ''), 'html.parser')
+        download_link = soup.find('a', class_='btn-down')
+        
+        if not download_link or 'href' not in download_link.attrs:
+            raise Exception("No download link found in TikSave response")
+            
+        return download_link['href']
     except Exception as e:
-        logger.error(f"SnapTik failed: {e}")
+        logger.error(f"TikSave failed: {e}")
         return None
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1393,7 +1413,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         platform = next((p for p in SUPPORTED_PLATFORMS if p.lower() in message_text.lower()), "Other")
         
         if platform == "TikTok":
-            download_url = await get_snaptik_download_url(message_text)
+            download_url = await get_tiksave_download_url(message_text)
             if download_url:
                 info_dict = {
                     'title': 'TikTok Video',
@@ -1402,7 +1422,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     'download_url': download_url
                 }
             else:
-                raise Exception("SnapTik failed, falling back to yt-dlp")
+                raise Exception("TikSave failed, falling back to yt-dlp")
         with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
             info_dict = await loop.run_in_executor(executor, lambda: ydl.extract_info(message_text, download=False))
         
@@ -1448,7 +1468,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )
             except Exception as e2:
                 await context.bot.edit_message_text(chat_id=update.message.chat_id, message_id=processing_msg.message_id,
-                                                  text="❌ TikTok video failed with both SnapTik and yt-dlp.")
+                                                  text="❌ TikTok video failed with both TikSave and yt-dlp.")
         else:
             await context.bot.edit_message_text(chat_id=update.message.chat_id, message_id=processing_msg.message_id,
                                               text="❌ Sorry, I couldn't process this URL. Make sure it's from a supported platform.")
@@ -1542,8 +1562,9 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
             
             if platform == "TikTok" and 'download_url' in info_dict and format_type == "video":
                 response = await asyncio.get_event_loop().run_in_executor(
-                    executor, lambda: requests.get(info_dict['download_url'], stream=True)
+                    executor, lambda: requests.get(info_dict['download_url'], stream=True, timeout=30)
                 )
+                response.raise_for_status()
                 with open(file_path, 'wb') as f:
                     for chunk in response.iter_content(1024):
                         f.write(chunk)
@@ -1560,20 +1581,40 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
             
             if format_type == "video":
                 output_file = os.path.join(temp_dir, "output.mp4")
-                subprocess.run([
-                    'ffmpeg', '-i', file_path, 
-                    '-c:v', 'libx264', '-profile:v', 'main', '-level', '3.1',
-                    '-b:v', '1500k', '-maxrate', '2000k', '-bufsize', '4000k',
-                    '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
-                    '-vf', 'scale=-2:1920:force_original_aspect_ratio=decrease',
-                    '-r', '30', '-f', 'mp4', '-movflags', '+faststart', 
-                    output_file
-                ], check=True)
-                file_path = output_file
+                try:
+                    # Check if input file is valid
+                    if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
+                        raise Exception("Downloaded video file is empty or missing")
+                    
+                    # Simplified FFmpeg command with error handling
+                    process = subprocess.run([
+                        'ffmpeg', '-i', file_path, 
+                        '-c:v', 'libx264', '-preset', 'medium',
+                        '-c:a', 'aac', '-b:a', '128k',
+                        '-vf', 'scale=-2:720:force_original_aspect_ratio=decrease',
+                        '-f', 'mp4', '-y', output_file
+                    ], capture_output=True, text=True, timeout=60)
+                    
+                    if process.returncode != 0:
+                        logger.error(f"FFmpeg error: {process.stderr}")
+                        raise Exception(f"FFmpeg processing failed: {process.stderr}")
+                    
+                    file_path = output_file
+                except subprocess.TimeoutExpired:
+                    logger.error("FFmpeg processing timed out")
+                    raise Exception("Video processing took too long")
+                except Exception as e:
+                    logger.error(f"FFmpeg processing failed: {e}")
+                    # Fall back to original file if processing fails
+                    if os.path.exists(file_path):
+                        logger.info("Falling back to original video file")
+                    else:
+                        raise
 
             file_size = os.path.getsize(file_path)
             if file_size > max_size:
-                await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=f"⚠️ File too large ({file_size/1024/1024:.1f}MB > {max_size/1024/1024:.1f}MB limit)")
+                await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, 
+                                                  text=f"⚠️ File too large ({file_size/1024/1024:.1f}MB > {max_size/1024/1024:.1f}MB limit)")
                 return
 
             await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="✅ Download complete! Now uploading...")
