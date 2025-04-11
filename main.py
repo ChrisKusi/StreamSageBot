@@ -1187,7 +1187,6 @@
 #         logger.error(f"Fatal error: {e}")
 
 
-
 import logging
 import yt_dlp
 import os
@@ -1215,7 +1214,7 @@ def run_flask():
     port = int(os.getenv("PORT", 8080))
     flask_app.run(host='0.0.0.0', port=port)
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 
 # Set up logging
@@ -1225,16 +1224,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Thread pool for synchronous operations
+# Thread pool
 executor = ThreadPoolExecutor(max_workers=4)
 
-# Define constants
-MAX_VIDEO_SIZE = 50 * 1024 * 1024  # 50MB limit for Telegram
-MAX_PREMIUM_SIZE = 100 * 1024 * 1024  # 100MB for premium users
+# Constants
+MAX_VIDEO_SIZE = 50 * 1024 * 1024
 SUPPORTED_PLATFORMS = ["TikTok", "Twitter", "Instagram", "Facebook", "Twitch", "Reddit"]
 
 async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, **kwargs):
-    """Safely send a reply through any update type."""
+    """Safely send a reply."""
     try:
         if update.message:
             return await update.message.reply_text(text, **kwargs)
@@ -1248,133 +1246,70 @@ async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text: s
     except Exception as e:
         logger.error(f"Failed to send message: {e}")
         if update.effective_chat:
-            return await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=text,
-                **kwargs
-            )
+            return await context.bot.send_message(chat_id=update.effective_chat.id, text=text, **kwargs)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send a welcome message when the command /start is issued."""
+    """Welcome message."""
     user = update.effective_user
     welcome_message = (
         f"🌟 *Welcome {user.first_name} to the Ultimate Media Bot!* 🌟\n\n"
-        "I'm your all-in-one solution for media downloading. Here's what I can do:\n\n"
-        "🎥 *Video Downloader* - Download videos from various platforms\n"
-        "🖼️ *Image Downloader* - Download images (watermark removal varies by platform)\n"
-        "🎵 *Audio Extractor* - Convert videos to high-quality MP3\n"
-        "📊 *Media Info* - Get detailed information about any media\n\n"
-        "🔹 *How to use:*\n"
-        "1. Send me a URL (video or image)\n"
-        "2. Choose your preferred format\n"
-        "3. Get your media instantly!\n\n"
-        "📌 *Available Commands:*\n"
-        "/start - Show this message\n"
-        "/help - Detailed instructions\n"
-        "/about - Bot info\n"
-        "/features - List features\n\n"
-        "Try me with a link now!"
+        "🎥 *Videos* - WhatsApp-compatible downloads\n"
+        "🖼️ *Images* - High-quality, watermark removal where possible\n"
+        "🎵 *Audio* - MP3 extraction\n"
+        "📊 *Info* - Media details\n\n"
+        "🔹 Send a URL to start!\n"
+        "📌 /help for instructions"
     )
-    
-    keyboard = [
-        [InlineKeyboardButton("📋 Features", callback_data="features_list"),
-         InlineKeyboardButton("❓ Help", callback_data="quick_help")],
-        [InlineKeyboardButton("🔗 Supported Sites", callback_data="supported_sites")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await safe_reply(update, context, welcome_message, reply_markup=reply_markup, parse_mode='Markdown')
+    keyboard = [[InlineKeyboardButton("❓ Help", callback_data="quick_help"),
+                 InlineKeyboardButton("🔗 Sites", callback_data="supported_sites")]]
+    await safe_reply(update, context, welcome_message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send a help message when the command /help is issued."""
+    """Help message."""
     help_text = (
-        "📚 *Complete Help Guide*\n\n"
+        "📚 *Help Guide*\n\n"
         "*Commands:*\n"
-        "/start - Welcome message\n"
+        "/start - Welcome\n"
         "/help - This guide\n"
-        "/about - Bot info\n"
-        "/features - List features\n\n"
-        "*How to Download:*\n"
-        "1. Send a URL from a supported platform\n"
-        "2. I’ll detect if it’s a video or image and show options\n"
-        "3. Choose video, audio, or image download\n"
-        "4. Receive your file in chat\n\n"
-        "*Supported Platforms:*\n"
+        "/about - Bot info\n\n"
+        "*How to:*\n"
+        "1. Send a URL (video/image)\n"
+        "2. Choose video, audio, or image\n"
+        "3. Get your media\n\n"
+        "*Platforms:*\n"
         f"{', '.join(SUPPORTED_PLATFORMS)}\n\n"
-        "*Features:*\n"
-        "• Video downloads (WhatsApp-compatible)\n"
-        "• Image downloads (watermarks may remain on some platforms)\n"
-        "• Audio extraction (MP3, up to 320kbps)\n"
-        "• Media info\n\n"
-        "⚠️ *Limitations:*\n"
-        "• 50MB file size limit\n"
-        "• Some TikTok links may need retries due to restrictions\n\n"
-        "Questions? Just ask!"
+        "⚠️ TikTok may need retries due to restrictions"
     )
     await safe_reply(update, context, help_text, parse_mode='Markdown')
 
 async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send information about the bot."""
+    """Bot info."""
     about_text = (
         "🤖 *Ultimate Media Bot*\n\n"
-        "*Version:* 1.0.1\n"
-        "*Last Updated:* April 2025\n\n"
-        "*Core Features:*\n"
-        "• Video and image downloading\n"
-        "• Audio extraction\n"
-        "• Media info display\n\n"
-        "*Technologies:*\n"
-        "• Python 3.11\n"
-        "• python-telegram-bot\n"
-        "• yt-dlp\n"
-        "• FFmpeg\n\n"
-        "*Developer:* Christian Kusi\n"
-        "Actively maintained!"
+        "*Version:* 1.0.2\n"
+        "*Updated:* April 2025\n"
+        "*By:* Christian Kusi\n"
+        "Powered by yt-dlp and FFmpeg"
     )
     await safe_reply(update, context, about_text, parse_mode='Markdown')
 
-async def features_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """List all available features."""
-    features_text = (
-        "✨ *Features*\n\n"
-        "*Current:*\n"
-        "• Video downloads (WhatsApp-compatible)\n"
-        "• Image downloads (no watermarks where possible)\n"
-        "• Audio extraction (MP3)\n"
-        "• Media info\n"
-        "• 50MB limit\n\n"
-        "Send a link to try me!"
-    )
-    await safe_reply(update, context, features_text, parse_mode='Markdown')
-
 def is_valid_url(url: str) -> bool:
-    """Check if the provided string is a valid URL."""
+    """Check if URL is valid."""
     url_pattern = re.compile(
-        r'^(https?://)?'  # http:// or https://
-        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain...
-        r'localhost|'  # localhost...
-        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
-        r'(?::\d+)?'  # optional port
-        r'(?:/?|[/?]\S+)$', re.IGNORECASE
+        r'^(https?://)?([A-Z0-9-]+\.)+[A-Z]{2,6}(:\d+)?(/.*)?$', re.IGNORECASE
     )
     return bool(url_pattern.match(url))
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Process incoming messages and detect URLs."""
+    """Process URLs."""
     message_text = update.message.text
     
     if not is_valid_url(message_text):
-        await update.message.reply_text(
-            "Please send a valid URL from platforms like TikTok, Twitter, etc.\n\n"
-            "Use /help for instructions."
-        )
+        await update.message.reply_text("Please send a valid URL.\nUse /help for guidance.")
         return
     
     context.user_data['current_url'] = message_text
-    processing_msg = await update.message.reply_text(
-        "🔍 Analyzing the link...",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]])
-    )
+    processing_msg = await update.message.reply_text("🔍 Analyzing...", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]))
     context.user_data['processing_msg_id'] = processing_msg.message_id
     context.user_data['chat_id'] = update.message.chat_id
     
@@ -1383,176 +1318,114 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ydl_opts = {
             'quiet': True,
             'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',  # Mimic TikTok app
+                'Referer': 'https://www.tiktok.com/',
             },
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = await loop.run_in_executor(
-                executor,
-                lambda: ydl.extract_info(message_text, download=False)
-            )
+            info_dict = await loop.run_in_executor(executor, lambda: ydl.extract_info(message_text, download=False))
         
         context.user_data['video_info'] = info_dict
-        is_image = 'photo' in info_dict.get('entries', [{}])[0] if 'entries' in info_dict else 'thumbnail' in info_dict and not info_dict.get('duration')
+        is_image = 'photo' in info_dict.get('entries', [{}])[0] or ('thumbnail' in info_dict and not info_dict.get('duration'))
         
         keyboard = []
-        if info_dict.get('duration'):  # Video content
-            keyboard.append([
-                InlineKeyboardButton("🎬 Download Video", callback_data="video"),
-                InlineKeyboardButton("🎵 Download Audio", callback_data="audio")
-            ])
-        if is_image or 'thumbnail' in info_dict:  # Image content
-            keyboard.append([InlineKeyboardButton("🖼️ Download Image", callback_data="image")])
+        if info_dict.get('duration'):
+            keyboard.append([InlineKeyboardButton("🎬 Video", callback_data="video"),
+                             InlineKeyboardButton("🎵 Audio", callback_data="audio")])
+        if is_image:
+            keyboard.append([InlineKeyboardButton("🖼️ Image", callback_data="image")])
         keyboard.append([InlineKeyboardButton("ℹ️ Info", callback_data="info"),
                          InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        title = info_dict.get('title', 'Media')
-        duration = info_dict.get('duration')
-        duration_str = f"{int(duration // 60)}:{int(duration % 60):02d}" if duration else "N/A"
         
         await context.bot.edit_message_text(
             chat_id=update.message.chat_id,
             message_id=processing_msg.message_id,
-            text=(
-                f"📋 *Media Found*\n\n"
-                f"*Title:* {title}\n"
-                f"*Duration:* {duration_str}\n"
-                f"*Source:* {info_dict.get('extractor', 'Unknown')}\n\n"
-                f"Select an option:"
-            ),
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-        
-    except Exception as e:
-        logger.error(f"Error fetching media info: {e}")
-        error_msg = str(e).lower()
-        if "tiktok" in message_text.lower():
-            await context.bot.edit_message_text(
-                chat_id=update.message.chat_id,
-                message_id=processing_msg.message_id,
-                text=(
-                    "⚠️ Couldn’t process this TikTok URL.\n"
-                    "TikTok may be blocking access—try a different link or retry later."
-                )
-            )
-        else:
-            await context.bot.edit_message_text(
-                chat_id=update.message.chat_id,
-                message_id=processing_msg.message_id,
-                text="❌ Couldn’t process this URL. Ensure it’s from a supported platform."
-            )
-
-async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle button presses from inline keyboards."""
-    query = update.callback_query
-    await query.answer()
-    
-    if query.data == "cancel":
-        await query.edit_message_text("✅ Operation cancelled.")
-        return
-    elif query.data == "features_list":
-        await features_command(update, context)
-        return
-    elif query.data == "quick_help":
-        await help_command(update, context)
-        return
-    elif query.data == "supported_sites":
-        sites_text = "📺 *Supported Platforms:*\n\n" + "\n".join(f"• {site}" for site in SUPPORTED_PLATFORMS)
-        await query.edit_message_text(sites_text, parse_mode='Markdown')
-        return
-    
-    video_url = context.user_data.get('current_url')
-    if not video_url:
-        await query.edit_message_text("❌ Session expired. Please send the URL again.")
-        return
-    
-    if query.data == "info":
-        await show_media_info(query, context)
-    elif query.data in ["video", "audio", "image"]:
-        await start_download(query, context, format_type=query.data)
-
-async def show_media_info(query, context: ContextTypes.DEFAULT_TYPE):
-    """Show available media information."""
-    try:
-        info_dict = context.user_data.get('video_info', {})
-        
-        info_parts = ["📑 *Media Information*"]
-        
-        def add_field(name, value, formatter=None):
-            if value not in [None, 'Unknown', '']:
-                formatted = formatter(value) if formatter else str(value)
-                info_parts.append(f"*{name}:* {formatted}")
-        
-        add_field("Title", info_dict.get('title'))
-        duration = info_dict.get('duration')
-        if duration:
-            add_field("Duration", f"{int(duration // 60)}:{int(duration % 60):02d}")
-        add_field("Uploader", info_dict.get('uploader'))
-        add_field("Upload Date", info_dict.get('upload_date', '').replace('T', ' '))
-        
-        def format_count(count):
-            if isinstance(count, (int, float)) and count is not None:
-                return f"{count:,}" if count < 1000000 else f"{count/1000000:.1f}M"
-            return str(count)
-        
-        add_field("Views", info_dict.get('view_count'), format_count)
-        add_field("Likes", info_dict.get('like_count'), format_count)
-        add_field("Resolution", info_dict.get('resolution'))
-        
-        if len(info_parts) == 1:
-            info_parts.append("\n⚠️ Limited info available")
-        
-        keyboard = []
-        if info_dict.get('duration'):
-            keyboard.append([
-                InlineKeyboardButton("🎬 Video", callback_data="video"),
-                InlineKeyboardButton("🎵 Audio", callback_data="audio")
-            ])
-        if 'thumbnail' in info_dict or 'photo' in info_dict.get('entries', [{}])[0]:
-            keyboard.append([InlineKeyboardButton("🖼️ Image", callback_data="image")])
-        keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
-        
-        await query.edit_message_text(
-            "\n".join(info_parts),
+            text=f"📋 *Found*\n*Title:* {info_dict.get('title', 'Media')}\n*Source:* {info_dict.get('extractor', 'Unknown')}\n\nSelect:",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
         
     except Exception as e:
-        logger.error(f"Error showing media info: {e}")
-        await query.edit_message_text(
-            "⚠️ Couldn’t retrieve info. Try downloading anyway?",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Try Download", callback_data="video"),
-                                                InlineKeyboardButton("Cancel", callback_data="cancel")]])
-        )
+        logger.error(f"Error fetching info: {e}")
+        if "tiktok" in message_text.lower():
+            await context.bot.edit_message_text(
+                chat_id=update.message.chat_id,
+                message_id=processing_msg.message_id,
+                text="⚠️ TikTok URL failed. Retry or use another link."
+            )
+        else:
+            await context.bot.edit_message_text(
+                chat_id=update.message.chat_id,
+                message_id=processing_msg.message_id,
+                text="❌ URL processing failed. Check the platform."
+            )
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle button presses."""
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "cancel":
+        await query.edit_message_text("✅ Cancelled.")
+        return
+    elif query.data == "quick_help":
+        await help_command(update, context)
+        return
+    elif query.data == "supported_sites":
+        await query.edit_message_text(f"📺 *Supported:*\n\n{', '.join(SUPPORTED_PLATFORMS)}", parse_mode='Markdown')
+        return
+    
+    url = context.user_data.get('current_url')
+    if not url:
+        await query.edit_message_text("❌ Session expired. Send the URL again.")
+        return
+    
+    if query.data == "info":
+        await show_media_info(query, context)
+    elif query.data in ["video", "audio", "image"]:
+        await start_download(query, context, query.data)
+
+async def show_media_info(query, context: ContextTypes.DEFAULT_TYPE):
+    """Show media info."""
+    info_dict = context.user_data.get('video_info', {})
+    info_parts = ["📑 *Media Info*"]
+    
+    for key, name in [("title", "Title"), ("uploader", "Uploader"), ("duration", "Duration (m:s)")]:
+        value = info_dict.get(key)
+        if value:
+            if key == "duration":
+                value = f"{int(value // 60)}:{int(value % 60):02d}"
+            info_parts.append(f"*{name}:* {value}")
+    
+    keyboard = []
+    if info_dict.get('duration'):
+        keyboard.append([InlineKeyboardButton("🎬 Video", callback_data="video"),
+                         InlineKeyboardButton("🎵 Audio", callback_data="audio")])
+    if 'thumbnail' in info_dict or 'photo' in info_dict.get('entries', [{}])[0]:
+        keyboard.append([InlineKeyboardButton("🖼️ Image", callback_data="image")])
+    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+    
+    await query.edit_message_text("\n".join(info_parts), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 async def start_download(query, context: ContextTypes.DEFAULT_TYPE, format_type: str):
-    """Start downloading the media."""
+    """Start download."""
     url = context.user_data.get('current_url')
-    max_size = MAX_VIDEO_SIZE
-    
-    download_msg = await query.edit_message_text(
-        f"⏳ Starting {format_type} download..."
-    )
-    
-    asyncio.create_task(
-        download_and_send_media(url, format_type, max_size, context, query.message.chat_id, download_msg.message_id)
-    )
+    download_msg = await query.edit_message_text(f"⏳ Downloading {format_type}...")
+    asyncio.create_task(download_and_send_media(url, format_type, MAX_VIDEO_SIZE, context, query.message.chat_id, download_msg.message_id))
 
 async def download_and_send_media(url: str, format_type: str, max_size: int, 
                                  context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int):
-    """Handle the complete download and send process."""
+    """Download and send media."""
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
             ydl_opts = {
                 'outtmpl': os.path.join(temp_dir, '%(id)s.%(ext)s'),
                 'quiet': True,
                 'noplaylist': True,
-                'retries': 5,
+                'retries': 10,
                 'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+                    'Referer': 'https://www.tiktok.com/',
                 },
             }
 
@@ -1569,12 +1442,13 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
             elif format_type == "image":
                 ydl_opts.update({
                     'format': 'bestimage',
-                    'get_url': True,  # Get direct image URL if possible
+                    'write_thumbnail': True,  # Ensure image is downloaded
+                    'skip_download': False,
                 })
-                file_extension = "jpg"  # Default, will adjust based on actual file
+                file_extension = "jpg"
             else:  # video
                 ydl_opts.update({
-                    'format': 'bestvideo+bestaudio/best',  # Get best available, then re-encode
+                    'format': 'bestvideo+bestaudio/best',
                     'merge_output_format': 'mp4',
                     'postprocessors': [{
                         'key': 'FFmpegVideoConvertor',
@@ -1582,20 +1456,20 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
                     }],
                     'postprocessor_args': {
                         'FFmpegVideoConvertor': [
-                            '-c:v', 'libx264',          # H.264 video codec
-                            '-profile:v', 'main',       # WhatsApp-compatible profile
-                            '-level', '3.1',            # Broad compatibility
-                            '-preset', 'medium',        # Balance speed/quality
-                            '-b:v', '2M',               # 2Mbps video bitrate
-                            '-c:a', 'aac',              # AAC audio codec
-                            '-b:a', '128k',             # 128kbps audio
-                            '-ar', '44100',             # 44.1kHz sample rate
-                            '-vf', 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2',  # Scale to 720p, preserve aspect
-                            '-map', '0:v:0',            # First video stream
-                            '-map', '0:a:0?',           # First audio stream (if exists)
-                            '-map', '-0:s',             # No subtitles
-                            '-map', '-0:d',             # No data streams
-                            '-movflags', '+faststart',  # Optimize for streaming
+                            '-c:v', 'libx264',
+                            '-profile:v', 'main',
+                            '-level', '3.1',
+                            '-preset', 'fast',
+                            '-b:v', '1500k',        # Lower bitrate for compatibility
+                            '-maxrate', '2000k',
+                            '-bufsize', '4000k',
+                            '-c:a', 'aac',
+                            '-b:a', '128k',
+                            '-ar', '44100',
+                            '-vf', 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2',
+                            '-r', '30',             # Force 30fps
+                            '-f', 'mp4',            # Force MP4 format
+                            '-movflags', '+faststart',
                         ]
                     },
                 })
@@ -1603,10 +1477,7 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
 
             loop = asyncio.get_running_loop()
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info_dict = await loop.run_in_executor(
-                    executor,
-                    lambda: ydl.extract_info(url, download=True)
-                )
+                info_dict = await loop.run_in_executor(executor, lambda: ydl.extract_info(url, download=True))
                 
                 file_id = info_dict['id']
                 file_path = os.path.join(temp_dir, f"{file_id}.{file_extension}")
@@ -1619,86 +1490,49 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
                             break
                 
                 if format_type == "image" and 'thumbnail' in info_dict:
-                    file_path = info_dict['thumbnail']  # Use direct URL if available
-                    file_extension = file_path.split('.')[-1].split('?')[0]
+                    file_path = next((os.path.join(temp_dir, f) for f in os.listdir(temp_dir) if f.endswith(('.jpg', '.png', '.webp'))), file_path)
 
                 file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
                 if file_size > max_size and format_type != "image":
-                    await context.bot.edit_message_text(
-                        chat_id=chat_id,
-                        message_id=message_id,
-                        text=f"⚠️ File too large ({file_size/1024/1024:.1f}MB > {max_size/1024/1024:.1f}MB)"
-                    )
+                    await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=f"⚠️ File too large ({file_size/1024/1024:.1f}MB)")
                     return
 
-                await context.bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=message_id,
-                    text="✅ Download complete! Uploading..."
-                )
+                await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="✅ Uploading...")
 
                 with open(file_path, 'rb') as file:
                     if format_type == "audio":
-                        await context.bot.send_audio(
-                            chat_id=chat_id,
-                            audio=file,
-                            title=info_dict.get('title', 'Audio'),
-                            performer=info_dict.get('uploader', 'Unknown'),
-                            duration=int(info_dict.get('duration', 0)),
-                            caption=f"🎵 {info_dict.get('title', 'Audio')}"
-                        )
+                        await context.bot.send_audio(chat_id=chat_id, audio=file, title=info_dict.get('title', 'Audio'),
+                                                     performer=info_dict.get('uploader', 'Unknown'), duration=int(info_dict.get('duration', 0)))
                     elif format_type == "image":
-                        await context.bot.send_photo(
-                            chat_id=chat_id,
-                            photo=file_path if file_path.startswith('http') else file,
-                            caption=f"🖼️ {info_dict.get('title', 'Image')} (Watermarks may remain)"
-                        )
-                    else:  # video
-                        await context.bot.send_video(
-                            chat_id=chat_id,
-                            video=file,
-                            caption=f"🎬 {info_dict.get('title', 'Video')}",
-                            duration=int(info_dict.get('duration', 0)),
-                            supports_streaming=True
-                        )
+                        await context.bot.send_photo(chat_id=chat_id, photo=file,
+                                                     caption=f"🖼️ {info_dict.get('title', 'Image')} (Watermarks may remain)")
+                    else:
+                        await context.bot.send_video(chat_id=chat_id, video=file, caption=f"🎬 {info_dict.get('title', 'Video')}",
+                                                     duration=int(info_dict.get('duration', 0)), supports_streaming=True)
 
                 await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
 
     except Exception as e:
         logger.error(f"Download failed: {e}")
-        error_msg = str(e).lower()
         if "tiktok" in url.lower():
-            await context.bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=message_id,
-                text="⚠️ TikTok download failed. Try another link or retry later."
-            )
+            await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="⚠️ TikTok failed. Retry or try another link.")
         else:
-            await context.bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=message_id,
-                text=f"❌ Download failed: {str(e)}"
-            )
+            await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=f"❌ Failed: {str(e)}")
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Log errors and send user-friendly messages."""
-    logger.error(f"Update {update} caused error {context.error}")
-    
+    """Handle errors."""
+    logger.error(f"Error: {context.error}")
     if isinstance(context.error, Conflict):
-        logger.warning("Conflict detected: Another instance might be running.")
+        logger.warning("Conflict detected.")
         await asyncio.sleep(5)
         return
-    
     if update.effective_chat:
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text="❌ An error occurred. Please try again."
-        )
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Error occurred. Try again.")
 
 async def main():
     TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
     if not TOKEN:
-        logger.error("No TELEGRAM_BOT_TOKEN found!")
+        logger.error("No TELEGRAM_BOT_TOKEN!")
         return
     
     flask_thread = threading.Thread(target=run_flask, daemon=True)
@@ -1709,7 +1543,6 @@ async def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("about", about_command))
-    application.add_handler(CommandHandler("features", features_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_error_handler(error_handler)
@@ -1721,26 +1554,18 @@ async def main():
         try:
             await application.initialize()
             await application.start()
-            await application.updater.start_polling(
-                drop_pending_updates=True,
-                allowed_updates=Update.ALL_TYPES
-            )
-            logger.info("Bot running with Flask service")
-            
+            await application.updater.start_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+            logger.info("Bot running")
             while True:
                 await asyncio.sleep(3600)
-            
         except Conflict as e:
-            logger.error(f"Conflict on attempt {attempt + 1}/{max_retries}: {e}")
+            logger.error(f"Conflict attempt {attempt + 1}/{max_retries}: {e}")
             if attempt < max_retries - 1:
-                logger.info(f"Retrying in {retry_delay} seconds...")
                 await asyncio.sleep(retry_delay)
                 continue
-            else:
-                logger.error("Max retries reached.")
-                break
+            break
         except Exception as e:
-            logger.error(f"Unexpected error: {e}")
+            logger.error(f"Error: {e}")
             break
         finally:
             try:
@@ -1756,6 +1581,6 @@ if __name__ == '__main__':
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
+        logger.info("Stopped by user")
     except Exception as e:
         logger.error(f"Fatal error: {e}")
