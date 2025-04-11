@@ -18,10 +18,12 @@ flask_app = Flask(__name__)
 
 @flask_app.route('/')
 def home():
-    return "Stock Mentor Bot is running!"
+    return "Stream Sage Bot is running!"
 
 def run_flask():
-    flask_app.run(host='0.0.0.0', port=int(os.getenv("PORT", 8080)))
+    """Run Flask web server in a separate thread"""
+    port = int(os.getenv("PORT", 8080))
+    flask_app.run(host='0.0.0.0', port=port)
 
 
 # Load environment variables from .env file
@@ -502,6 +504,10 @@ async def main():
         logger.error("No TELEGRAM_BOT_TOKEN environment variable found!")
         return
     
+    # Start Flask in a separate thread
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    
     # Create application
     application = Application.builder().token(TOKEN).build()
     
@@ -515,31 +521,62 @@ async def main():
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_error_handler(error_handler)
     
-    # Start Flask in a separate thread
-    threading.Thread(target=run_flask, daemon=True).start()
-    # Start Telegram bot polling with drop_pending_updates to avoid conflicts
-    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+   
 
     
-    # Run the bot with proper shutdown handling
-    try:
-        await application.initialize()
-        await application.start()
-        await application.updater.start_polling()
+    # # Run the bot with proper shutdown handling
+    # try:
+    #     await application.initialize()
+    #     await application.start()
+    #     await application.updater.start_polling()
         
-        # Keep the application running until interrupted
-        while True:
-            await asyncio.sleep(1)
+    #     # Keep the application running until interrupted
+    #     while True:
+    #         await asyncio.sleep(1)
             
-    except (KeyboardInterrupt, asyncio.CancelledError):
-        logger.info("Shutting down bot...")
-        await application.updater.stop()
-        await application.stop()
-        await application.shutdown()
-    except Exception as e:
-        logger.error(f"Fatal error: {e}")
-        await application.shutdown()
-        raise
+    # except (KeyboardInterrupt, asyncio.CancelledError):
+    #     logger.info("Shutting down bot...")
+    #     await application.updater.stop()
+    #     await application.stop()
+    #     await application.shutdown()
+    # except Exception as e:
+    #     logger.error(f"Fatal error: {e}")
+    #     await application.shutdown()
+    #     raise
+
+    # Start polling
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling(
+        drop_pending_updates=True,
+        allowed_updates=Update.ALL_TYPES
+    )
+    
+    logger.info("Bot is now running with Flask web service")
+    
+    # Keep the application running
+    while True:
+        await asyncio.sleep(3600)  # Sleep for longer periods
+        
+# if __name__ == '__main__':
+#     try:
+#         # Windows-specific event loop policy
+#         if os.name == 'nt':
+#             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        
+#         # Create and run event loop
+#         loop = asyncio.new_event_loop()
+#         asyncio.set_event_loop(loop)
+        
+#         try:
+#             loop.run_until_complete(main())
+#         finally:
+#             loop.close()
+            
+#     except KeyboardInterrupt:
+#         logger.info("Bot stopped by user")
+#     except Exception as e:
+#         logger.error(f"Fatal error: {e}")
 
 if __name__ == '__main__':
     try:
@@ -547,15 +584,7 @@ if __name__ == '__main__':
         if os.name == 'nt':
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         
-        # Create and run event loop
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        try:
-            loop.run_until_complete(main())
-        finally:
-            loop.close()
-            
+        asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:
