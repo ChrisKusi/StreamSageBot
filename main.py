@@ -590,8 +590,6 @@
 #     except Exception as e:
 #         logger.error(f"Fatal error: {e}")
 
-
-
 # import logging
 # import yt_dlp
 # import os
@@ -705,6 +703,11 @@
 #         "⚠️ *Limitations:*\n"
 #         "• Free users: 50MB file size limit\n"
 #         "• Some platforms may have restrictions\n\n"
+#         "*Authentication for Platforms:*\n"
+#         "Some platforms (e.g., Instagram, Twitter) may require login. To enable downloads:\n"
+#         "1. Export your browser cookies using a tool like 'Export Cookies' extension.\n"
+#         "2. Save the cookies as 'cookies.txt' and upload it to the bot server.\n"
+#         "3. The bot will use these cookies to authenticate.\n\n"
 #         "Need more help? Just send me a message!"
 #     )
 #     await safe_reply(update, context, help_text, parse_mode='Markdown')
@@ -721,7 +724,7 @@
 #         "*Technologies Used:*\n"
 #         "• Python 3.10+\n"
 #         "• python-telegram-bot\n"
-#         "• yt-dlp (video extraction)\n"
+#         "• yt-dlp (video Wextraction)\n"
 #         "• FFmpeg (media processing)\n\n"
 #         "*Developer:*\n"
 #         "Christian Kusi\n\n"
@@ -793,8 +796,8 @@
 #         logger.error(f"TikSave failed: {e}")
 #         return None
 
-# async def convert_video(input_path: str, output_path: str) -> None:
-#     """Convert video to WhatsApp-compatible format using FFmpeg."""
+# async def convert_video(input_path: str, output_path: str) -> bool:
+#     """Convert video to WhatsApp-compatible format using FFmpeg. Returns True if successful, False if failed."""
 #     try:
 #         if not os.path.exists(input_path) or os.path.getsize(input_path) == 0:
 #             raise Exception("Input video file is empty or missing")
@@ -808,18 +811,24 @@
 #             '-c:a', 'aac', '-b:a', '128k',
 #             '-f', 'mp4', '-movflags', '+faststart',
 #             '-y', output_path
-#         ], capture_output=True, text=True, timeout=60)
+#         ], capture_output=True, text=True, timeout=120)  # Increased timeout to 120 seconds
 
 #         if process.returncode != 0:
 #             logger.error(f"FFmpeg conversion error: {process.stderr}")
-#             raise Exception(f"FFmpeg conversion failed: {process.stderr}")
+#             return False
 
 #         if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
-#             raise Exception("Converted video file is empty or missing")
+#             logger.error("Converted video file is empty or missing")
+#             return False
 
+#         return True
+
+#     except subprocess.TimeoutExpired:
+#         logger.error("FFmpeg conversion timed out after 120 seconds")
+#         return False
 #     except Exception as e:
 #         logger.error(f"Video conversion failed: {e}")
-#         raise
+#         return False
 
 # async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 #     message_text = update.message.text
@@ -840,6 +849,12 @@
 #         info_dict = {}
 #         platform = next((p for p in SUPPORTED_PLATFORMS if p.lower() in message_text.lower()), "Other")
         
+#         # yt-dlp options with cookie support
+#         ydl_opts = {
+#             'quiet': True,
+#             'cookiefile': 'cookies.txt'  # Assumes cookies.txt is in the project root
+#         }
+        
 #         if platform == "TikTok":
 #             download_url = await get_tiksave_download_url(message_text)
 #             if download_url:
@@ -852,19 +867,19 @@
 #             else:
 #                 logger.info("TikSave failed, falling back to yt-dlp for TikTok")
 #                 try:
-#                     with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+#                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
 #                         info_dict = await loop.run_in_executor(executor, lambda: ydl.extract_info(message_text, download=False))
 #                 except Exception as e:
 #                     logger.error(f"yt-dlp fallback for TikTok failed: {e}")
 #                     raise Exception("Failed to process TikTok URL with both TikSave and yt-dlp")
 #         else:
 #             try:
-#                 with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+#                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
 #                     info_dict = await loop.run_in_executor(executor, lambda: ydl.extract_info(message_text, download=False))
 #             except Exception as e:
 #                 logger.error(f"yt-dlp failed for {platform}: {e}")
 #                 if "login required" in str(e).lower() or "rate-limit" in str(e).lower():
-#                     raise Exception(f"{platform} requires login or hit rate limit. See /help for cookie instructions.")
+#                     raise Exception(f"{platform} requires login or hit rate limit. Please add cookies.txt as described in /help.")
 #                 raise Exception(f"Failed to process {platform} URL: {str(e)}")
         
 #         context.user_data['video_info'] = info_dict
@@ -889,7 +904,7 @@
 #         logger.error(f"Processing error: {e}")
 #         error_msg = str(e)
 #         if "login required" in error_msg.lower() or "rate-limit" in error_msg.lower():
-#             error_msg = f"❌ {platform} requires authentication or hit rate limit. See /help for how to add cookies."
+#             error_msg = f"❌ {platform} requires authentication or hit rate limit. Please add cookies.txt as described in /help."
 #         else:
 #             error_msg = f"❌ Failed to process URL: {error_msg}"
 #         await context.bot.edit_message_text(chat_id=update.message.chat_id, message_id=processing_msg.message_id, text=error_msg)
@@ -996,6 +1011,7 @@
 #                     'outtmpl': raw_file_path,
 #                     'quiet': True,
 #                     'format': 'bestvideo+bestaudio/best' if format_type == "video" else 'bestaudio/best',
+#                     'cookiefile': 'cookies.txt'  # Use cookies for authentication
 #                 }
 #                 if format_type == "audio":
 #                     ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
@@ -1004,12 +1020,15 @@
 #                         await asyncio.get_event_loop().run_in_executor(executor, lambda: ydl.download([url]))
 #                 except Exception as e:
 #                     if "login required" in str(e).lower() or "rate-limit" in str(e).lower():
-#                         raise Exception(f"{platform} requires login or hit rate limit. See /help for cookie instructions.")
+#                         raise Exception(f"{platform} requires login or hit rate limit. Please add cookies.txt as described in /help.")
 #                     raise
 
 #             # Step 2: Convert the media if it's a video
 #             if format_type == "video":
-#                 await convert_video(raw_file_path, final_file_path)
+#                 conversion_success = await convert_video(raw_file_path, final_file_path)
+#                 if not conversion_success:
+#                     logger.info("Conversion failed, falling back to raw file")
+#                     final_file_path = raw_file_path
 #             else:
 #                 # For audio, just use the raw file (already in MP3 format)
 #                 final_file_path = raw_file_path
@@ -1041,7 +1060,7 @@
 #         logger.error(f"Download failed: {e}")
 #         error_msg = str(e)
 #         if "login required" in error_msg.lower() or "rate-limit" in error_msg.lower():
-#             error_msg = f"❌ {platform} requires authentication or hit rate limit. See /help for how to add cookies."
+#             error_msg = f"❌ {platform} requires authentication or hit rate limit. Please add cookies.txt as described in /help."
 #         await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=error_msg)
 
 # async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1155,9 +1174,12 @@ executor = ThreadPoolExecutor(max_workers=4)
 # Constants
 MAX_VIDEO_SIZE = 50 * 1024 * 1024
 MAX_PREMIUM_SIZE = 100 * 1024 * 1024
-SUPPORTED_PLATFORMS = ["TikTok", "Twitter", "Instagram", "Facebook", "Twitch", "Reddit"]
+SUPPORTED_PLATFORMS = ["TikTok", "Twitter", "Instagram", "Facebook"]  # Removed Twitch and Reddit
 PREMIUM_FEATURES = ["Video Generation", "Image Generation", "Larger File Downloads", "Batch Processing", "Priority Support"]
 TIKSAVE_URL = "https://tiksave.io/en"
+TIKSAVE_MP3_URL = "https://tiksave.io/en/download-tiktok-mp3"
+INSTAGRAM_DOWNLOADER_URL = "https://fastdl.app/en"
+TWITTER_DOWNLOADER_URL = "https://x-downloader.com/"
 
 async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, **kwargs):
     try:
@@ -1227,11 +1249,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "⚠️ *Limitations:*\n"
         "• Free users: 50MB file size limit\n"
         "• Some platforms may have restrictions\n\n"
-        "*Authentication for Platforms:*\n"
-        "Some platforms (e.g., Instagram, Twitter) may require login. To enable downloads:\n"
-        "1. Export your browser cookies using a tool like 'Export Cookies' extension.\n"
-        "2. Save the cookies as 'cookies.txt' and upload it to the bot server.\n"
-        "3. The bot will use these cookies to authenticate.\n\n"
         "Need more help? Just send me a message!"
     )
     await safe_reply(update, context, help_text, parse_mode='Markdown')
@@ -1242,13 +1259,12 @@ async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "*Version:* 1.0.0\n"
         "*Last Updated:* April 2025\n\n"
         "*Core Features:*\n"
-        "• Video downloading from 50+ platforms\n"
+        "• Video downloading from supported platforms\n"
         "• Audio extraction with quality options\n"
         "• Video information display\n\n"
         "*Technologies Used:*\n"
         "• Python 3.10+\n"
         "• python-telegram-bot\n"
-        "• yt-dlp (video Wextraction)\n"
         "• FFmpeg (media processing)\n\n"
         "*Developer:*\n"
         "Christian Kusi\n\n"
@@ -1291,33 +1307,98 @@ def is_valid_url(url: str) -> bool:
     url_pattern = re.compile(r'^(https?://)?([A-Z0-9-]+\.)+[A-Z]{2,6}(:\d+)?(/.*)?$', re.IGNORECASE)
     return bool(url_pattern.match(url))
 
-async def get_tiksave_download_url(tiktok_url: str) -> str:
-    """Fetch TikTok video URL from TikSave."""
+async def get_tiksave_download_url(tiktok_url: str, format_type: str) -> str:
+    """Fetch TikTok video or audio URL from TikSave."""
     try:
+        url = TIKSAVE_MP3_URL if format_type == "audio" else TIKSAVE_URL
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': TIKSAVE_URL,
-            'Origin': TIKSAVE_URL
+            'Referer': url,
+            'Origin': 'https://tiksave.io'
         }
         data = {'url': tiktok_url}
         
         response = await asyncio.get_event_loop().run_in_executor(
             executor, 
-            lambda: requests.post(TIKSAVE_URL, data=data, headers=headers, timeout=30)
+            lambda: requests.post(url, data=data, headers=headers, timeout=30)
         )
         
         if response.status_code != 200:
             raise Exception(f"TikSave request failed with status {response.status_code}")
             
         soup = BeautifulSoup(response.text, 'html.parser')
-        download_button = soup.find('a', string=re.compile('Download MP4 \\[1\\]'))
+        if format_type == "audio":
+            download_button = soup.find('a', string=re.compile('Download MP3'))
+        else:
+            download_button = soup.find('a', string=re.compile('Download MP4 \\[1\\]'))
         
         if not download_button or 'href' not in download_button.attrs:
-            raise Exception("No MP4 [1] download link found in TikSave response")
+            raise Exception(f"No {'MP3' if format_type == 'audio' else 'MP4 [1]'} download link found in TikSave response")
             
         return download_button['href']
     except Exception as e:
-        logger.error(f"TikSave failed: {e}")
+        logger.error(f"TikSave failed for {format_type}: {e}")
+        return None
+
+async def get_instagram_download_url(instagram_url: str) -> str:
+    """Fetch Instagram video URL from FastDL."""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': INSTAGRAM_DOWNLOADER_URL,
+            'Origin': 'https://fastdl.app'
+        }
+        data = {'url': instagram_url}
+        
+        response = await asyncio.get_event_loop().run_in_executor(
+            executor, 
+            lambda: requests.post(INSTAGRAM_DOWNLOADER_URL, data=data, headers=headers, timeout=30)
+        )
+        
+        if response.status_code != 200:
+            raise Exception(f"FastDL request failed with status {response.status_code}")
+            
+        soup = BeautifulSoup(response.text, 'html.parser')
+        download_button = soup.find('a', class_='download-button')
+        
+        if not download_button or 'href' not in download_button.attrs:
+            raise Exception("No download link found in FastDL response")
+            
+        return download_button['href']
+    except Exception as e:
+        logger.error(f"FastDL failed: {e}")
+        return None
+
+async def get_twitter_download_url(twitter_url: str, format_type: str) -> str:
+    """Fetch Twitter video or audio URL from X-Downloader."""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': TWITTER_DOWNLOADER_URL,
+            'Origin': 'https://x-downloader.com'
+        }
+        data = {'url': twitter_url}
+        
+        response = await asyncio.get_event_loop().run_in_executor(
+            executor, 
+            lambda: requests.post(TWITTER_DOWNLOADER_URL, data=data, headers=headers, timeout=30)
+        )
+        
+        if response.status_code != 200:
+            raise Exception(f"X-Downloader request failed with status {response.status_code}")
+            
+        soup = BeautifulSoup(response.text, 'html.parser')
+        if format_type == "audio":
+            download_button = soup.find('a', string=re.compile('Download MP3'))
+        else:
+            download_button = soup.find('a', string=re.compile('Download MP4'))
+        
+        if not download_button or 'href' not in download_button.attrs:
+            raise Exception(f"No {'MP3' if format_type == 'audio' else 'MP4'} download link found in X-Downloader response")
+            
+        return download_button['href']
+    except Exception as e:
+        logger.error(f"X-Downloader failed for {format_type}: {e}")
         return None
 
 async def convert_video(input_path: str, output_path: str) -> bool:
@@ -1326,16 +1407,15 @@ async def convert_video(input_path: str, output_path: str) -> bool:
         if not os.path.exists(input_path) or os.path.getsize(input_path) == 0:
             raise Exception("Input video file is empty or missing")
 
-        # WhatsApp-compatible settings: H.264 video, AAC audio, MP4 container
         process = subprocess.run([
             'ffmpeg', '-i', input_path,
             '-c:v', 'libx264', '-profile:v', 'baseline', '-level', '3.0',
-            '-b:v', '1000k',  # Lower bitrate for compatibility
-            '-vf', 'scale=640:-2',  # Scale to 640 width, maintain aspect ratio
+            '-b:v', '1000k',
+            '-vf', 'scale=640:-2',
             '-c:a', 'aac', '-b:a', '128k',
             '-f', 'mp4', '-movflags', '+faststart',
             '-y', output_path
-        ], capture_output=True, text=True, timeout=120)  # Increased timeout to 120 seconds
+        ], capture_output=True, text=True, timeout=120)
 
         if process.returncode != 0:
             logger.error(f"FFmpeg conversion error: {process.stderr}")
@@ -1369,18 +1449,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['chat_id'] = update.message.chat_id
     
     try:
-        loop = asyncio.get_running_loop()
         info_dict = {}
         platform = next((p for p in SUPPORTED_PLATFORMS if p.lower() in message_text.lower()), "Other")
         
-        # yt-dlp options with cookie support
-        ydl_opts = {
-            'quiet': True,
-            'cookiefile': 'cookies.txt'  # Assumes cookies.txt is in the project root
-        }
-        
         if platform == "TikTok":
-            download_url = await get_tiksave_download_url(message_text)
+            # For TikTok, we'll fetch metadata using the video downloader
+            download_url = await get_tiksave_download_url(message_text, "video")
             if download_url:
                 info_dict = {
                     'title': 'TikTok Video',
@@ -1389,22 +1463,41 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     'download_url': download_url
                 }
             else:
-                logger.info("TikSave failed, falling back to yt-dlp for TikTok")
-                try:
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        info_dict = await loop.run_in_executor(executor, lambda: ydl.extract_info(message_text, download=False))
-                except Exception as e:
-                    logger.error(f"yt-dlp fallback for TikTok failed: {e}")
-                    raise Exception("Failed to process TikTok URL with both TikSave and yt-dlp")
-        else:
+                raise Exception("Failed to process TikTok URL with TikSave")
+        elif platform == "Instagram":
+            download_url = await get_instagram_download_url(message_text)
+            if download_url:
+                info_dict = {
+                    'title': 'Instagram Video',
+                    'duration': 0,
+                    'extractor': 'Instagram',
+                    'download_url': download_url
+                }
+            else:
+                raise Exception("Failed to process Instagram URL with FastDL")
+        elif platform == "Twitter":
+            download_url = await get_twitter_download_url(message_text, "video")
+            if download_url:
+                info_dict = {
+                    'title': 'Twitter Video',
+                    'duration': 0,
+                    'extractor': 'Twitter',
+                    'download_url': download_url
+                }
+            else:
+                raise Exception("Failed to process Twitter URL with X-Downloader")
+        elif platform == "Facebook":
+            # Fallback to yt-dlp for Facebook (no alternative downloader provided)
             try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info_dict = await loop.run_in_executor(executor, lambda: ydl.extract_info(message_text, download=False))
+                with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+                    info_dict = await asyncio.get_event_loop().run_in_executor(
+                        executor, lambda: ydl.extract_info(message_text, download=False)
+                    )
             except Exception as e:
-                logger.error(f"yt-dlp failed for {platform}: {e}")
-                if "login required" in str(e).lower() or "rate-limit" in str(e).lower():
-                    raise Exception(f"{platform} requires login or hit rate limit. Please add cookies.txt as described in /help.")
-                raise Exception(f"Failed to process {platform} URL: {str(e)}")
+                logger.error(f"yt-dlp failed for Facebook: {e}")
+                raise Exception(f"Failed to process Facebook URL: {str(e)}")
+        else:
+            raise Exception(f"Unsupported platform: {platform}")
         
         context.user_data['video_info'] = info_dict
         keyboard = [
@@ -1426,11 +1519,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     except Exception as e:
         logger.error(f"Processing error: {e}")
-        error_msg = str(e)
-        if "login required" in error_msg.lower() or "rate-limit" in error_msg.lower():
-            error_msg = f"❌ {platform} requires authentication or hit rate limit. Please add cookies.txt as described in /help."
-        else:
-            error_msg = f"❌ Failed to process URL: {error_msg}"
+        error_msg = f"❌ Failed to process URL: {str(e)}"
         await context.bot.edit_message_text(chat_id=update.message.chat_id, message_id=processing_msg.message_id, text=error_msg)
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1517,35 +1606,49 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
             platform = next((p for p in SUPPORTED_PLATFORMS if p.lower() in url.lower()), "Other")
-            raw_file_path = os.path.join(temp_dir, f"raw_media.{format_type}")
+            raw_file_path = os.path.join(temp_dir, f"raw_media.{format_type if format_type == 'audio' else 'video'}")
             final_file_path = os.path.join(temp_dir, f"final_media.{format_type if format_type == 'audio' else 'mp4'}")
             info_dict = context.user_data.get('video_info', {})
             
             # Step 1: Download the media
-            if platform == "TikTok" and 'download_url' in info_dict and format_type == "video":
-                response = await asyncio.get_event_loop().run_in_executor(
-                    executor, lambda: requests.get(info_dict['download_url'], stream=True, timeout=30)
-                )
-                response.raise_for_status()
-                with open(raw_file_path, 'wb') as f:
-                    for chunk in response.iter_content(1024):
-                        f.write(chunk)
-            else:
+            if platform == "TikTok":
+                download_url = await get_tiksave_download_url(url, format_type)
+                if not download_url:
+                    raise Exception(f"Failed to download TikTok {'audio' if format_type == 'audio' else 'video'} with TikSave")
+            elif platform == "Instagram" and format_type == "video":
+                download_url = await get_instagram_download_url(url)
+                if not download_url:
+                    raise Exception("Failed to download Instagram video with FastDL")
+            elif platform == "Twitter":
+                download_url = await get_twitter_download_url(url, format_type)
+                if not download_url:
+                    raise Exception(f"Failed to download Twitter {'audio' if format_type == 'audio' else 'video'} with X-Downloader")
+            elif platform == "Facebook":
                 ydl_opts = {
                     'outtmpl': raw_file_path,
                     'quiet': True,
                     'format': 'bestvideo+bestaudio/best' if format_type == "video" else 'bestaudio/best',
-                    'cookiefile': 'cookies.txt'  # Use cookies for authentication
                 }
                 if format_type == "audio":
                     ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
                 try:
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                         await asyncio.get_event_loop().run_in_executor(executor, lambda: ydl.download([url]))
+                    download_url = None  # Direct download to file
                 except Exception as e:
-                    if "login required" in str(e).lower() or "rate-limit" in str(e).lower():
-                        raise Exception(f"{platform} requires login or hit rate limit. Please add cookies.txt as described in /help.")
-                    raise
+                    raise Exception(f"Failed to download Facebook {'audio' if format_type == 'audio' else 'video'}: {str(e)}")
+            else:
+                raise Exception(f"Unsupported platform or format: {platform}, {format_type}")
+
+            # Download the file if a URL was provided
+            if download_url:
+                response = await asyncio.get_event_loop().run_in_executor(
+                    executor, lambda: requests.get(download_url, stream=True, timeout=30)
+                )
+                response.raise_for_status()
+                with open(raw_file_path, 'wb') as f:
+                    for chunk in response.iter_content(1024):
+                        f.write(chunk)
 
             # Step 2: Convert the media if it's a video
             if format_type == "video":
@@ -1554,10 +1657,12 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
                     logger.info("Conversion failed, falling back to raw file")
                     final_file_path = raw_file_path
             else:
-                # For audio, just use the raw file (already in MP3 format)
+                # For audio, the file is already in MP3 format
                 final_file_path = raw_file_path
 
             # Step 3: Check file size
+            if not os.path.exists(final_file_path):
+                raise Exception("Downloaded file is missing")
             file_size = os.path.getsize(final_file_path)
             if file_size > max_size:
                 await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, 
@@ -1582,9 +1687,7 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
 
     except Exception as e:
         logger.error(f"Download failed: {e}")
-        error_msg = str(e)
-        if "login required" in error_msg.lower() or "rate-limit" in error_msg.lower():
-            error_msg = f"❌ {platform} requires authentication or hit rate limit. Please add cookies.txt as described in /help."
+        error_msg = f"❌ Failed to process URL: {str(e)}"
         await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=error_msg)
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
