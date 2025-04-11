@@ -1369,10 +1369,9 @@ async def get_tiksave_download_url(tiktok_url: str) -> str:
         }
         data = {'url': tiktok_url}
         
-        # Get initial response
         response = await asyncio.get_event_loop().run_in_executor(
             executor, 
-            lambda: requests.post(TIKSAVE_URL + '/api/ajaxSearch', data=data, headers=headers)
+            lambda: requests.post(TIKSAVE_URL + '/api/ajaxSearch', data=data, headers=headers, timeout=30)
         )
         
         if response.status_code != 200:
@@ -1413,6 +1412,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         platform = next((p for p in SUPPORTED_PLATFORMS if p.lower() in message_text.lower()), "Other")
         
         if platform == "TikTok":
+            # Try TikSave first
             download_url = await get_tiksave_download_url(message_text)
             if download_url:
                 info_dict = {
@@ -1422,9 +1422,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     'download_url': download_url
                 }
             else:
-                raise Exception("TikSave failed, falling back to yt-dlp")
-        with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
-            info_dict = await loop.run_in_executor(executor, lambda: ydl.extract_info(message_text, download=False))
+                # Fallback to yt-dlp for TikTok if TikSave fails
+                logger.info("TikSave failed, falling back to yt-dlp for TikTok")
+                try:
+                    with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+                        info_dict = await loop.run_in_executor(executor, lambda: ydl.extract_info(message_text, download=False))
+                except Exception as e:
+                    logger.error(f"yt-dlp fallback for TikTok failed: {e}")
+                    raise Exception("Both TikSave and yt-dlp failed for TikTok")
+        else:
+            # Use yt-dlp for all other platforms
+            try:
+                with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+                    info_dict = await loop.run_in_executor(executor, lambda: ydl.extract_info(message_text, download=False))
+            except Exception as e:
+                logger.error(f"yt-dlp failed for {platform}: {e}")
+                if "login required" in str(e).lower() or "rate-limit" in str(e).lower():
+                    raise Exception(f"{platform} requires login or hit rate limit. Try using /help for cookie instructions.")
+                raise Exception(f"Failed to process {platform} URL: {str(e)}")
         
         context.user_data['video_info'] = info_dict
         keyboard = [
@@ -1439,39 +1454,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.edit_message_text(
             chat_id=update.message.chat_id,
             message_id=processing_msg.message_id,
-            text=f"📋 *Video Found*\n\n*Title:* {info_dict.get('title', 'Video')}\n*Duration:* {duration_str}\n*Source:* {info_dict.get('extractor', 'Unknown')}\n\nSelect an option to continue:",
+            text=f"📋 *Video Found*\n\n*Title:* {info_dict.get('title', 'Video')}\n*Duration:* {duration_str}\n*Source:* {info_dict.get('extractor', platform)}\n\nSelect an option to continue:",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
         
     except Exception as e:
-        logger.error(f"Error: {e}")
-        if platform == "TikTok":
-            try:
-                with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
-                    info_dict = await loop.run_in_executor(executor, lambda: ydl.extract_info(message_text, download=False))
-                    context.user_data['video_info'] = info_dict
-                    keyboard = [
-                        [InlineKeyboardButton("🎬 Download Video", callback_data="video"),
-                         InlineKeyboardButton("🎵 Download Audio (MP3)", callback_data="audio")],
-                        [InlineKeyboardButton("ℹ️ Video Info", callback_data="info"),
-                         InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
-                    ]
-                    duration = info_dict.get('duration')
-                    duration_str = f"{int(duration // 60)}:{int(duration % 60):02d}" if duration else "Unknown"
-                    await context.bot.edit_message_text(
-                        chat_id=update.message.chat_id,
-                        message_id=processing_msg.message_id,
-                        text=f"📋 *Video Found (yt-dlp)*\n\n*Title:* {info_dict.get('title', 'Video')}\n*Duration:* {duration_str}\n*Source:* TikTok\n\nSelect an option to continue:",
-                        reply_markup=InlineKeyboardMarkup(keyboard),
-                        parse_mode='Markdown'
-                    )
-            except Exception as e2:
-                await context.bot.edit_message_text(chat_id=update.message.chat_id, message_id=processing_msg.message_id,
-                                                  text="❌ TikTok video failed with both TikSave and yt-dlp.")
+        logger.error(f"Processing error: {e}")
+        error_msg = str(e)
+        if "login required" in error_msg.lower() or "rate-limit" in error_msg.lower():
+            error_msg = f"❌ {platform} requires authentication or hit rate limit. See /help for how to add cookies."
         else:
-            await context.bot.edit_message_text(chat_id=update.message.chat_id, message_id=processing_msg.message_id,
-                                              text="❌ Sorry, I couldn't process this URL. Make sure it's from a supported platform.")
+            error_msg = f"❌ Failed to process URL: {error_msg}"
+        await context.bot.edit_message_text(chat_id=update.message.chat_id, message_id=processing_msg.message_id, text=error_msg)
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1561,6 +1556,7 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
             info_dict = context.user_data.get('video_info', {})
             
             if platform == "TikTok" and 'download_url' in info_dict and format_type == "video":
+                # Use TikSave download URL directly
                 response = await asyncio.get_event_loop().run_in_executor(
                     executor, lambda: requests.get(info_dict['download_url'], stream=True, timeout=30)
                 )
@@ -1569,6 +1565,7 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
                     for chunk in response.iter_content(1024):
                         f.write(chunk)
             else:
+                # Use yt-dlp for other platforms or audio
                 ydl_opts = {
                     'outtmpl': file_path,
                     'quiet': True,
@@ -1576,17 +1573,20 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
                 }
                 if format_type == "audio":
                     ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    await asyncio.get_event_loop().run_in_executor(executor, lambda: ydl.download([url]))
-            
+                try:
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        await asyncio.get_event_loop().run_in_executor(executor, lambda: ydl.download([url]))
+                except Exception as e:
+                    if "login required" in str(e).lower() or "rate-limit" in str(e).lower():
+                        raise Exception(f"{platform} requires login or hit rate limit. See /help for cookie instructions.")
+                    raise
+                    
             if format_type == "video":
                 output_file = os.path.join(temp_dir, "output.mp4")
                 try:
-                    # Check if input file is valid
                     if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
                         raise Exception("Downloaded video file is empty or missing")
                     
-                    # Simplified FFmpeg command with error handling
                     process = subprocess.run([
                         'ffmpeg', '-i', file_path, 
                         '-c:v', 'libx264', '-preset', 'medium',
@@ -1600,12 +1600,8 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
                         raise Exception(f"FFmpeg processing failed: {process.stderr}")
                     
                     file_path = output_file
-                except subprocess.TimeoutExpired:
-                    logger.error("FFmpeg processing timed out")
-                    raise Exception("Video processing took too long")
                 except Exception as e:
                     logger.error(f"FFmpeg processing failed: {e}")
-                    # Fall back to original file if processing fails
                     if os.path.exists(file_path):
                         logger.info("Falling back to original video file")
                     else:
@@ -1634,7 +1630,10 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
 
     except Exception as e:
         logger.error(f"Download failed: {e}")
-        await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=f"❌ Download failed: {str(e)}")
+        error_msg = str(e)
+        if "login required" in error_msg.lower() or "rate-limit" in error_msg.lower():
+            error_msg = f"❌ {platform} requires authentication or hit rate limit. See /help for how to add cookies."
+        await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=error_msg)
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Error: {context.error}")
@@ -1642,7 +1641,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await asyncio.sleep(5)
         return
     if update.effective_chat:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ An error occurred. Please try again later.")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ An error occurred. Please try again later or see /help.")
 
 async def main():
     TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
