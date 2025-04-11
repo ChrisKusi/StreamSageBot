@@ -1,3 +1,4 @@
 tiktokBot.py
 .env
 .venv/
+.gitignore
