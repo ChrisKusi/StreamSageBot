@@ -597,7 +597,7 @@ import yt_dlp
 import os
 import tempfile
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, CallbackQueryHandler
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 import asyncio
 import re
 from typing import Dict, Any
@@ -605,7 +605,6 @@ from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
 import threading
 from flask import Flask
-import subprocess
 
 # Flask app for Render Web Service
 flask_app = Flask(__name__)
@@ -632,24 +631,13 @@ logger = logging.getLogger(__name__)
 # Thread pool for synchronous operations
 executor = ThreadPoolExecutor(max_workers=4)
 
-# Constants
+# Define constants
 MAX_VIDEO_SIZE = 50 * 1024 * 1024  # 50MB limit for Telegram
 MAX_PREMIUM_SIZE = 100 * 1024 * 1024  # 100MB for premium users
 SUPPORTED_PLATFORMS = ["YouTube", "TikTok", "Twitter", "Instagram", "Facebook", "Twitch", "Reddit"]
 PREMIUM_FEATURES = ["Video Generation", "Image Generation", "Larger File Downloads", "Batch Processing", "Priority Support"]
-COOKIES_FILE = "cookies.txt"  # Path to your cookies file
-DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 
-def check_ffmpeg():
-    """Verify FFmpeg is installed and working"""
-    try:
-        subprocess.run(["ffmpeg", "-version"], check=True, capture_output=True)
-        logger.info("FFmpeg is installed and working")
-    except Exception as e:
-        logger.error(f"FFmpeg check failed: {e}")
-        raise RuntimeError("FFmpeg is not properly installed. Please install FFmpeg.")
-
-async def safe_reply(update: Update, context: CallbackContext, text: str, **kwargs):
+async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, **kwargs):
     """Safely send a reply through any update type."""
     try:
         if update.message:
@@ -670,7 +658,7 @@ async def safe_reply(update: Update, context: CallbackContext, text: str, **kwar
                 **kwargs
             )
 
-async def start(update: Update, context: CallbackContext):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a welcome message when the command /start is issued."""
     user = update.effective_user
     welcome_message = (
@@ -702,7 +690,7 @@ async def start(update: Update, context: CallbackContext):
     
     await safe_reply(update, context, welcome_message, reply_markup=reply_markup, parse_mode='Markdown')
 
-async def help_command(update: Update, context: CallbackContext):
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a help message when the command /help is issued."""
     help_text = (
         "📚 *Complete Help Guide*\n\n"
@@ -731,7 +719,7 @@ async def help_command(update: Update, context: CallbackContext):
     )
     await safe_reply(update, context, help_text, parse_mode='Markdown')
 
-async def about_command(update: Update, context: CallbackContext):
+async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send information about the bot when the command /about is issued."""
     about_text = (
         "🤖 *Ultimate Media Bot*\n\n"
@@ -752,7 +740,7 @@ async def about_command(update: Update, context: CallbackContext):
     )
     await safe_reply(update, context, about_text, parse_mode='Markdown')
 
-async def features_command(update: Update, context: CallbackContext):
+async def features_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """List all available features."""
     features_text = (
         "✨ *All Available Features*\n\n"
@@ -771,7 +759,7 @@ async def features_command(update: Update, context: CallbackContext):
     )
     await safe_reply(update, context, features_text, parse_mode='Markdown')
 
-async def premium_command(update: Update, context: CallbackContext):
+async def premium_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show premium subscription information."""
     premium_text = (
         "💎 *Premium Features Coming Soon!*\n\n"
@@ -797,7 +785,7 @@ def is_valid_url(url: str) -> bool:
     )
     return bool(url_pattern.match(url))
 
-async def handle_message(update: Update, context: CallbackContext):
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Process incoming messages and detect URLs."""
     message_text = update.message.text
     
@@ -813,14 +801,7 @@ async def handle_message(update: Update, context: CallbackContext):
         
         try:
             loop = asyncio.get_running_loop()
-            ydl_opts = {
-                'quiet': True,
-                'extract_flat': False,
-                'user_agent': DEFAULT_USER_AGENT,
-                'cookiefile': COOKIES_FILE if os.path.exists(COOKIES_FILE) else None,
-            }
-            
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            with yt_dlp.YoutubeDL({'quiet': True, 'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}) as ydl:
                 info_dict = await loop.run_in_executor(
                     executor,
                     lambda: ydl.extract_info(message_text, download=False)
@@ -854,35 +835,32 @@ async def handle_message(update: Update, context: CallbackContext):
                     parse_mode='Markdown'
                 )
                 
-        except yt_dlp.utils.DownloadError as e:
-            if "HTTP Error 429" in str(e):
-                error_msg = "⚠️ YouTube is temporarily blocking downloads. Please try again later."
-            elif "Sign in to confirm you're not a bot" in str(e):
-                error_msg = "🔒 This YouTube video requires authentication. Try a different video."
-            else:
-                error_msg = "❌ Sorry, I couldn't process this URL. Make sure it's from a supported platform."
-            
-            await context.bot.edit_message_text(
-                chat_id=update.message.chat_id,
-                message_id=context.user_data['processing_msg_id'],
-                text=error_msg
-            )
-            logger.error(f"Error fetching video info: {e}")
-            
         except Exception as e:
             logger.error(f"Error fetching video info: {e}")
-            await context.bot.edit_message_text(
-                chat_id=update.message.chat_id,
-                message_id=context.user_data['processing_msg_id'],
-                text="❌ Sorry, I couldn't process this URL. Make sure it's from a supported platform."
-            )
+            error_msg = str(e)
+            if "429" in error_msg or "Sign in" in error_msg:
+                await context.bot.edit_message_text(
+                    chat_id=update.message.chat_id,
+                    message_id=context.user_data['processing_msg_id'],
+                    text=(
+                        "⚠️ YouTube is rate-limiting or requires sign-in for this video.\n"
+                        "Try again later or use a different link.\n"
+                        "Public videos should still work!"
+                    )
+                )
+            else:
+                await context.bot.edit_message_text(
+                    chat_id=update.message.chat_id,
+                    message_id=context.user_data['processing_msg_id'],
+                    text="❌ Sorry, I couldn’t process this URL. Make sure it's from a supported platform."
+                )
     else:
         await update.message.reply_text(
             "Please send me a valid video URL from platforms like YouTube, TikTok, Twitter, etc.\n\n"
             "Use /help for complete instructions."
         )
 
-async def button_callback(update: Update, context: CallbackContext):
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle button presses from inline keyboards."""
     query = update.callback_query
     await query.answer()
@@ -914,21 +892,18 @@ async def button_callback(update: Update, context: CallbackContext):
     elif query.data in ["video", "audio"]:
         await start_download(query, context, format_type=query.data)
 
-async def show_video_info(query, context: CallbackContext):
+async def show_video_info(query, context: ContextTypes.DEFAULT_TYPE):
     """Show available video information, even if some fields are missing."""
     try:
         info_dict = context.user_data.get('video_info', {})
         
-        # Build information text piece by piece
         info_parts = ["📑 *Video Information*"]
         
-        # Helper function to safely add fields
         def add_field(name, value, formatter=None):
             if value not in [None, 'Unknown', '']:
                 formatted = formatter(value) if formatter else str(value)
                 info_parts.append(f"*{name}:* {formatted}")
         
-        # Add available fields
         add_field("Title", info_dict.get('title'))
         
         duration = info_dict.get('duration')
@@ -943,7 +918,6 @@ async def show_video_info(query, context: CallbackContext):
             formatted_date = f"{upload_date[6:8]}/{upload_date[4:6]}/{upload_date[0:4]}"
             add_field("Upload Date", formatted_date)
         
-        # Add numeric fields with formatting
         def format_count(count):
             if isinstance(count, int):
                 if count >= 1000000:
@@ -955,7 +929,6 @@ async def show_video_info(query, context: CallbackContext):
         add_field("Views", info_dict.get('view_count'), format_count)
         add_field("Likes", info_dict.get('like_count'), format_count)
         
-        # Add technical info if available
         add_field("Resolution", info_dict.get('resolution'))
         add_field("FPS", info_dict.get('fps'))
         
@@ -969,12 +942,10 @@ async def show_video_info(query, context: CallbackContext):
                 filesize_str = f"{filesize} bytes"
             add_field("Estimated Size", filesize_str)
         
-        # If we couldn't get any info
         if len(info_parts) == 1:
             info_parts.append("\n⚠️ Couldn't retrieve detailed information")
             info_parts.append("You can still try downloading the media")
         
-        # Create keyboard
         keyboard = [
             [InlineKeyboardButton("🎬 Download Video", callback_data="video"),
              InlineKeyboardButton("🎵 Download Audio", callback_data="audio")],
@@ -1000,7 +971,7 @@ async def show_video_info(query, context: CallbackContext):
             parse_mode='Markdown'
         )
 
-async def start_download(query, context: CallbackContext, format_type: str):
+async def start_download(query, context: ContextTypes.DEFAULT_TYPE, format_type: str):
     """Start downloading the video or audio."""
     video_url = context.user_data.get('current_url')
     max_size = MAX_VIDEO_SIZE
@@ -1021,7 +992,7 @@ async def start_download(query, context: CallbackContext, format_type: str):
     )
 
 async def download_and_send_media(url: str, format_type: str, max_size: int, 
-                                 context: CallbackContext, chat_id: int, message_id: int):
+                                 context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int):
     """Handle the complete download and send process."""
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1029,18 +1000,9 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
                 'outtmpl': os.path.join(temp_dir, '%(id)s.%(ext)s'),
                 'quiet': True,
                 'noplaylist': True,
-                'retries': 3,
-                'extract_flat': False,
-                'user_agent': DEFAULT_USER_AGENT,
-                'cookiefile': COOKIES_FILE if os.path.exists(COOKIES_FILE) else None,
-                'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-                'merge_output_format': 'mp4',
-                'postprocessors': [],
+                'retries': 5,
                 'http_headers': {
-                    'User-Agent': DEFAULT_USER_AGENT,
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.5',
-                    'Accept-Encoding': 'gzip, deflate',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
                 },
             }
 
@@ -1055,122 +1017,95 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
                 })
                 file_extension = "mp3"
             else:
-                # Ensure WhatsApp compatible MP4 format
-                ydl_opts['postprocessors'].append({
-                    'key': 'FFmpegVideoConvertor',
-                    'preferedformat': 'mp4',
-                    'when': 'post_process'
+                ydl_opts.update({
+                    'format': 'bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/best',  # Prefer H.264 + AAC
+                    'merge_output_format': 'mp4',
+                    'postprocessors': [{
+                        'key': 'FFmpegVideoConvertor',
+                        'preferedformat': 'mp4',  # Ensure MP4 output
+                    }],
+                    'postprocessor_args': {
+                        'FFmpegVideoConvertor': ['-c:v', 'libx264', '-c:a', 'aac', '-b:a', '192k']  # WhatsApp-compatible codecs
+                    },
                 })
                 file_extension = "mp4"
 
-            try:
-                loop = asyncio.get_running_loop()
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info_dict = await loop.run_in_executor(
-                        executor,
-                        lambda: ydl.extract_info(url, download=True)
-                    )
-                    
-                    file_id = info_dict['id']
-                    file_path = os.path.join(temp_dir, f"{file_id}.{file_extension}")
-                    
-                    if not os.path.exists(file_path):
-                        for file in os.listdir(temp_dir):
-                            if file.startswith(file_id):
-                                file_path = os.path.join(temp_dir, file)
-                                break
+            loop = asyncio.get_running_loop()
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info_dict = await loop.run_in_executor(
+                    executor,
+                    lambda: ydl.extract_info(url, download=True)
+                )
+                
+                file_id = info_dict['id']
+                file_path = os.path.join(temp_dir, f"{file_id}.{file_extension}")
+                
+                if not os.path.exists(file_path):
+                    for file in os.listdir(temp_dir):
+                        if file.startswith(file_id):
+                            file_path = os.path.join(temp_dir, file)
+                            break
 
-                    file_size = os.path.getsize(file_path)
-                    if file_size > max_size:
-                        await context.bot.edit_message_text(
-                            chat_id=chat_id,
-                            message_id=message_id,
-                            text=(
-                                f"⚠️ File too large ({file_size/1024/1024:.1f}MB > "
-                                f"{max_size/1024/1024:.1f}MB limit)"
-                            )
+                file_size = os.path.getsize(file_path)
+                if file_size > max_size:
+                    await context.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        text=(
+                            f"⚠️ File too large ({file_size/1024/1024:.1f}MB > "
+                            f"{max_size/1024/1024:.1f}MB limit)"
                         )
-                        return
-
-                    await context.bot.edit_message_text(
-                        chat_id=chat_id,
-                        message_id=message_id,
-                        text="✅ Download complete! Now uploading..."
                     )
+                    return
 
-                    # Ensure proper MP4 format for WhatsApp
-                    if format_type == "video":
-                        # Convert to WhatsApp compatible format if needed
-                        converted_path = os.path.join(temp_dir, f"{file_id}_converted.mp4")
-                        ffmpeg_cmd = [
-                            'ffmpeg',
-                            '-i', file_path,
-                            '-c:v', 'libx264',
-                            '-profile:v', 'baseline',
-                            '-level', '3.0',
-                            '-pix_fmt', 'yuv420p',
-                            '-c:a', 'aac',
-                            '-strict', 'experimental',
-                            '-movflags', '+faststart',
-                            converted_path
-                        ]
-                        
-                        try:
-                            await loop.run_in_executor(
-                                executor,
-                                lambda: subprocess.run(ffmpeg_cmd, check=True))
-                            file_path = converted_path
-                        except subprocess.CalledProcessError as e:
-                            logger.warning(f"FFmpeg conversion failed, using original: {e}")
+                await context.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text="✅ Download complete! Now uploading..."
+                )
 
-                    with open(file_path, 'rb') as file:
-                        if format_type == "audio":
-                            await context.bot.send_audio(
-                                chat_id=chat_id,
-                                audio=file,
-                                title=info_dict.get('title', 'Audio'),
-                                performer=info_dict.get('uploader', 'Unknown'),
-                                duration=int(info_dict.get('duration', 0)),
-                                caption=f"🎵 {info_dict.get('title', 'Audio')}"
-                            )
-                        else:
-                            await context.bot.send_video(
-                                chat_id=chat_id,
-                                video=file,
-                                caption=f"🎬 {info_dict.get('title', 'Video')}",
-                                duration=int(info_dict.get('duration', 0)),
-                                supports_streaming=True
-                            )
+                with open(file_path, 'rb') as file:
+                    if format_type == "audio":
+                        await context.bot.send_audio(
+                            chat_id=chat_id,
+                            audio=file,
+                            title=info_dict.get('title', 'Audio'),
+                            performer=info_dict.get('uploader', 'Unknown'),
+                            duration=int(info_dict.get('duration', 0)),
+                            caption=f"🎵 {info_dict.get('title', 'Audio')}"
+                        )
+                    else:
+                        await context.bot.send_video(
+                            chat_id=chat_id,
+                            video=file,
+                            caption=f"🎬 {info_dict.get('title', 'Video')}",
+                            duration=int(info_dict.get('duration', 0)),
+                            supports_streaming=True  # Optimize for sharing
+                        )
 
-                    await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-
-            except yt_dlp.utils.DownloadError as e:
-                if "HTTP Error 429" in str(e):
-                    logger.error("YouTube rate limit exceeded")
-                    await context.bot.edit_message_text(
-                        chat_id=chat_id,
-                        message_id=message_id,
-                        text="⚠️ YouTube is temporarily blocking downloads. Please try again later."
-                    )
-                elif "Sign in to confirm you're not a bot" in str(e):
-                    logger.error("YouTube requires authentication")
-                    await context.bot.edit_message_text(
-                        chat_id=chat_id,
-                        message_id=message_id,
-                        text="🔒 This YouTube video requires authentication. Try a different video or check back later."
-                    )
-                else:
-                    raise
+                await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
 
     except Exception as e:
         logger.error(f"Download failed: {e}")
-        await context.bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text=f"❌ Download failed: {str(e)}"
-        )
+        error_msg = str(e)
+        if "429" in error_msg or "Sign in" in error_msg:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=(
+                    "⚠️ YouTube rate limit hit or sign-in required.\n"
+                    "Try again later or use a different link.\n"
+                    "Public videos should work without issues!"
+                )
+            )
+        else:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=f"❌ Download failed: {str(e)}"
+            )
 
-async def error_handler(update: Update, context: CallbackContext):
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Log errors and send user-friendly messages."""
     logger.error(f"Update {update} caused error {context.error}")
     
@@ -1185,9 +1120,6 @@ async def main():
     if not TOKEN:
         logger.error("No TELEGRAM_BOT_TOKEN environment variable found!")
         return
-    
-    # Verify FFmpeg is installed
-    check_ffmpeg()
     
     # Start Flask in a separate thread
     flask_thread = threading.Thread(target=run_flask, daemon=True)
@@ -1219,7 +1151,7 @@ async def main():
     # Keep the application running
     while True:
         await asyncio.sleep(3600)  # Sleep for longer periods
-
+        
 if __name__ == '__main__':
     try:
         # Windows-specific event loop policy
