@@ -1171,15 +1171,15 @@ logger = logging.getLogger(__name__)
 executor = ThreadPoolExecutor(max_workers=4)
 
 # Constants
-MAX_VIDEO_SIZE = 50 * 1024 * 1024
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB limit for free users
 MAX_PREMIUM_SIZE = 100 * 1024 * 1024
 SUPPORTED_PLATFORMS = ["TikTok", "YouTube", "Twitter", "Instagram", "Facebook"]
 PREMIUM_FEATURES = ["Video Generation", "Image Generation", "Larger File Downloads", "Batch Processing", "Priority Support"]
-TIKTOK_DOWNLOADER_URL = "https://downloader.bot/en"
-YOUTUBE_DOWNLOADER_URL = "https://www.y2mate.com/en949"
-TWITTER_DOWNLOADER_URL = "https://x-downloader.com/"
-INSTAGRAM_DOWNLOADER_URL = "https://fastdl.app/en"
-FACEBOOK_DOWNLOADER_URL = "https://fdown.net/"
+TIKTOK_URL = "https://downloader.bot/en"
+YOUTUBE_URL = "https://www.y2mate.com/en949"
+TWITTER_URL = "https://x-downloader.com/"
+INSTAGRAM_URL = "https://fastdl.app/en"
+FACEBOOK_URL = "https://fdown.net/"
 
 async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, **kwargs):
     try:
@@ -1307,221 +1307,101 @@ def is_valid_url(url: str) -> bool:
     url_pattern = re.compile(r'^(https?://)?([A-Z0-9-]+\.)+[A-Z]{2,6}(:\d+)?(/.*)?$', re.IGNORECASE)
     return bool(url_pattern.match(url))
 
-async def get_tiktok_options(tiktok_url: str) -> dict:
-    """Fetch TikTok download options from downloader.bot."""
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': TIKTOK_DOWNLOADER_URL,
-            'Origin': 'https://downloader.bot'
-        }
-        data = {'url': tiktok_url}
-        
-        response = await asyncio.get_event_loop().run_in_executor(
-            executor, 
-            lambda: requests.post(TIKTOK_DOWNLOADER_URL, data=data, headers=headers, timeout=30)
-        )
-        
-        if response.status_code != 200:
-            raise Exception(f"TikTok downloader request failed with status {response.status_code}")
-            
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Placeholder parsing - adjust based on actual HTML
-        video_link = None
-        audio_link = None
-        image_links = []
-        
-        for a in soup.find_all('a', href=True):
-            href = a['href']
-            text = a.text.lower()
+async def fetch_html(url: str, post_url: str) -> str:
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    data = {'url': url}
+    response = await asyncio.get_event_loop().run_in_executor(
+        executor, lambda: requests.post(post_url, data=data, headers=headers, timeout=30)
+    )
+    return response.text if response.status_code == 200 else None
+
+async def get_tiktok_options(url: str) -> dict:
+    html = await fetch_html(url, TIKTOK_URL)
+    if not html:
+        return {}
+    soup = BeautifulSoup(html, 'html.parser')
+    options = {}
+    for button in soup.find_all('a', class_='block-flex-btn'):
+        href = button.get('href', '')
+        if href != "javascript:void(0);":  # Check if link is populated
+            text = button.find('span', class_='md-font').text.lower()
             if 'video' in text:
-                video_link = href
-            elif 'music' in text or 'mp3' in text:
-                audio_link = href
-            elif 'image' in text:
-                image_links.append(href)
-        
-        options = {}
-        if video_link:
-            options['video'] = video_link
-        if audio_link:
-            options['audio'] = audio_link
-        if image_links:
-            options['images'] = image_links
-        
-        return options
-    except Exception as e:
-        logger.error(f"Failed to get TikTok options: {e}")
-        return {}
+                options['video'] = href
+            elif 'music' in text:
+                options['audio'] = href
+    # Placeholder for images (since snippet wasn't provided for images)
+    images = [img.get('src', '') for img in soup.find_all('img', class_='downloadable-image') if img.get('src')]
+    if images:
+        options['images'] = images
+    return options
 
-async def get_youtube_options(youtube_url: str) -> dict:
-    """Fetch YouTube download options from y2mate."""
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': YOUTUBE_DOWNLOADER_URL,
-            'Origin': 'https://www.y2mate.com'
-        }
-        data = {'url': youtube_url}
-        
-        response = await asyncio.get_event_loop().run_in_executor(
-            executor, 
-            lambda: requests.post(YOUTUBE_DOWNLOADER_URL, data=data, headers=headers, timeout=30)
-        )
-        
-        if response.status_code != 200:
-            raise Exception(f"YouTube downloader request failed with status {response.status_code}")
-            
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Placeholder parsing - adjust based on actual HTML
-        qualities = []
-        audio_link = None
-        
-        quality_table = soup.find('table', class_='table')
-        if quality_table:
-            for row in quality_table.find_all('tr'):
-                cells = row.find_all('td')
-                if len(cells) >= 3:
-                    resolution = cells[0].text.strip()
-                    if 'mp4' in cells[1].text.lower():
-                        download_button = cells[2].find('a', href=True)
-                        if download_button:
-                            qualities.append({'resolution': resolution, 'url': download_button['href']})
-                    elif 'mp3' in cells[1].text.lower():
-                        download_button = cells[2].find('a', href=True)
-                        if download_button:
-                            audio_link = download_button['href']
-        
-        options = {}
-        if qualities:
-            options['qualities'] = qualities
-        if audio_link:
-            options['audio'] = audio_link
-        
-        return options
-    except Exception as e:
-        logger.error(f"Failed to get YouTube options: {e}")
+async def get_youtube_options(url: str) -> dict:
+    html = await fetch_html(url, YOUTUBE_URL)
+    if not html:
         return {}
+    soup = BeautifulSoup(html, 'html.parser')
+    options = {'qualities': []}
+    for row in soup.select('tbody tr'):
+        cells = row.find_all('td')
+        if len(cells) >= 3:
+            button = cells[2].find('button', onclick=True)
+            if button:
+                onclick = button['onclick']
+                match = re.search(r"startConvert\('(.*?)','(.*?)'\)", onclick)
+                if match:
+                    fmt, dl_url = match.groups()
+                    if fmt == 'mp4':
+                        resolution = cells[0].text.strip().split()[0]  # e.g., "360p"
+                        options['qualities'].append({'resolution': resolution, 'url': dl_url})
+                    elif fmt == 'mp3':
+                        options['audio'] = dl_url
+    return options
 
-async def get_twitter_options(twitter_url: str) -> dict:
-    """Fetch Twitter download options from x-downloader.com."""
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': TWITTER_DOWNLOADER_URL,
-            'Origin': 'https://x-downloader.com'
-        }
-        data = {'url': twitter_url}
-        
-        response = await asyncio.get_event_loop().run_in_executor(
-            executor, 
-            lambda: requests.post(TWITTER_DOWNLOADER_URL, data=data, headers=headers, timeout=30)
-        )
-        
-        if response.status_code != 200:
-            raise Exception(f"Twitter downloader request failed with status {response.status_code}")
-            
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Placeholder parsing - adjust based on actual HTML
-        video_link = None
-        audio_link = None
-        
-        for a in soup.find_all('a', href=True):
-            href = a['href']
-            text = a.text.lower()
-            if 'mp4' in text:
-                video_link = href
-            elif 'mp3' in text:
-                audio_link = href
-        
-        options = {}
-        if video_link:
-            options['video'] = video_link
-        if audio_link:
-            options['audio'] = audio_link
-        
-        return options
-    except Exception as e:
-        logger.error(f"Failed to get Twitter options: {e}")
+async def get_twitter_options(url: str) -> dict:
+    html = await fetch_html(url, TWITTER_URL)
+    if not html:
         return {}
+    soup = BeautifulSoup(html, 'html.parser')
+    options = {}
+    for link in soup.find_all('a', class_='btn btn-primary btn-download-file'):
+        href = link['href']
+        if '.mp4' in href:
+            options['video'] = href
+        elif '.mp3' in href:
+            options['audio'] = href
+    return options
 
-async def get_instagram_options(instagram_url: str) -> dict:
-    """Fetch Instagram download options from fastdl.app."""
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': INSTAGRAM_DOWNLOADER_URL,
-            'Origin': 'https://fastdl.app'
-        }
-        data = {'url': instagram_url}
-        
-        response = await asyncio.get_event_loop().run_in_executor(
-            executor, 
-            lambda: requests.post(INSTAGRAM_DOWNLOADER_URL, data=data, headers=headers, timeout=30)
-        )
-        
-        if response.status_code != 200:
-            raise Exception(f"Instagram downloader request failed with status {response.status_code}")
-            
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Placeholder parsing - adjust based on actual HTML
-        media_links = []
-        
-        for a in soup.find_all('a', href=True, class_='download-button'):
-            href = a['href']
-            if href.endswith(('.mp4', '.jpg', '.jpeg', '.png')):
-                media_links.append(href)
-        
-        options = {'media': media_links} if media_links else {}
-        return options
-    except Exception as e:
-        logger.error(f"Failed to get Instagram options: {e}")
+async def get_instagram_options(url: str) -> dict:
+    html = await fetch_html(url, INSTAGRAM_URL)
+    if not html:
         return {}
+    soup = BeautifulSoup(html, 'html.parser')
+    options = {'videos': [], 'images': []}
+    for link in soup.find_all('a', class_='button--filled'):
+        href = link['href']
+        if '.mp4' in href:
+            options['videos'].append(href)
+        elif '.jpg' in href or '.jpeg' in href:
+            options['images'].append(href)
+    return options
 
-async def get_facebook_options(facebook_url: str) -> dict:
-    """Fetch Facebook download options from fdown.net."""
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': FACEBOOK_DOWNLOADER_URL,
-            'Origin': 'https://fdown.net'
-        }
-        data = {'url': facebook_url}
-        
-        response = await asyncio.get_event_loop().run_in_executor(
-            executor, 
-            lambda: requests.post(FACEBOOK_DOWNLOADER_URL, data=data, headers=headers, timeout=30)
-        )
-        
-        if response.status_code != 200:
-            raise Exception(f"Facebook downloader request failed with status {response.status_code}")
-            
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Placeholder parsing - adjust based on actual HTML
-        video_link = None
-        
-        for a in soup.find_all('a', href=True):
-            if 'download' in a.text.lower() and a['href'].endswith('.mp4'):
-                video_link = a['href']
-                break
-        
-        options = {'video': video_link} if video_link else {}
-        return options
-    except Exception as e:
-        logger.error(f"Failed to get Facebook options: {e}")
+async def get_facebook_options(url: str) -> dict:
+    html = await fetch_html(url, FACEBOOK_URL)
+    if not html:
         return {}
+    soup = BeautifulSoup(html, 'html.parser')
+    options = {'qualities': []}
+    for link in soup.find_all('a', class_='btn btn-primary btn-sm'):
+        href = link['href']
+        link_id = link.get('id', '')
+        resolution = 'Normal' if link_id == 'sdlink' else 'HD' if link_id == 'hdlink' else 'Unknown'
+        options['qualities'].append({'resolution': resolution, 'url': href})
+    return options
 
 async def convert_video(input_path: str, output_path: str) -> bool:
-    """Convert video to WhatsApp-compatible format using FFmpeg."""
     try:
         if not os.path.exists(input_path) or os.path.getsize(input_path) == 0:
             raise Exception("Input video file is empty or missing")
-
         process = subprocess.run([
             'ffmpeg', '-i', input_path,
             '-c:v', 'libx264', '-profile:v', 'baseline', '-level', '3.0',
@@ -1531,15 +1411,12 @@ async def convert_video(input_path: str, output_path: str) -> bool:
             '-f', 'mp4', '-movflags', '+faststart',
             '-y', output_path
         ], capture_output=True, text=True, timeout=120)
-
         if process.returncode != 0:
             logger.error(f"FFmpeg conversion error: {process.stderr}")
             return False
-
         if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
             logger.error("Converted video file is empty or missing")
             return False
-
         return True
     except subprocess.TimeoutExpired:
         logger.error("FFmpeg conversion timed out after 120 seconds")
@@ -1564,21 +1441,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         platform = next((p for p in SUPPORTED_PLATFORMS if p.lower() in message_text.lower()), "Other")
-        options = {}
+        fetchers = {
+            'TikTok': get_tiktok_options,
+            'YouTube': get_youtube_options,
+            'Twitter': get_twitter_options,
+            'Instagram': get_instagram_options,
+            'Facebook': get_facebook_options
+        }
+        if platform == "Other":
+            raise Exception(f"Unsupported platform")
         
-        if platform == "TikTok":
-            options = await get_tiktok_options(message_text)
-        elif platform == "YouTube":
-            options = await get_youtube_options(message_text)
-        elif platform == "Twitter":
-            options = await get_twitter_options(message_text)
-        elif platform == "Instagram":
-            options = await get_instagram_options(message_text)
-        elif platform == "Facebook":
-            options = await get_facebook_options(message_text)
-        else:
-            raise Exception(f"Unsupported platform: {platform}")
-        
+        options = await fetchers[platform](message_text)
         if not options:
             raise Exception(f"Failed to fetch download options for {platform}")
         
@@ -1590,11 +1463,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard.append([InlineKeyboardButton("🎬 Download Video", callback_data=f"{platform.lower()}_video")])
         if 'audio' in options:
             keyboard.append([InlineKeyboardButton("🎵 Download Audio", callback_data=f"{platform.lower()}_audio")])
-        if 'images' in options:
+        if 'images' in options and options['images']:
             keyboard.append([InlineKeyboardButton("🖼️ Download Images", callback_data=f"{platform.lower()}_images")])
         if 'qualities' in options:
             keyboard.append([InlineKeyboardButton("🎬 Select Video Quality", callback_data=f"{platform.lower()}_select_quality")])
-        if 'media' in options:
+        if platform.lower() == 'instagram' and (options.get('videos') or options.get('images')):
             keyboard.append([InlineKeyboardButton("📦 Download All Media", callback_data=f"{platform.lower()}_all_media")])
         keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
         
@@ -1654,12 +1527,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await start_download(query, context, options['qualities'][index]['url'], 'video')
         else:
             await query.edit_message_text("❌ Invalid quality selected.")
-    elif query.data == f"{platform}_all_media" and 'media' in options:
-        await download_and_send_media_group(query, context, options['media'])
+    elif query.data == f"{platform}_all_media" and ('videos' in options or 'images' in options):
+        await download_and_send_media_group(query, context, options)
 
 async def start_download(query, context: ContextTypes.DEFAULT_TYPE, download_url: str, format_type: str):
     download_msg = await query.edit_message_text(f"⏳ Starting {'audio' if format_type == 'audio' else 'video'} download...")
-    asyncio.create_task(download_and_send_media(download_url, format_type, MAX_VIDEO_SIZE, context, query.message.chat_id, download_msg.message_id))
+    asyncio.create_task(download_and_send_media(download_url, format_type, MAX_FILE_SIZE, context, query.message.chat_id, download_msg.message_id))
 
 async def download_and_send_images(query, context: ContextTypes.DEFAULT_TYPE, image_urls: list):
     download_msg = await query.edit_message_text("⏳ Downloading images...")
@@ -1675,7 +1548,7 @@ async def download_and_send_images(query, context: ContextTypes.DEFAULT_TYPE, im
                 with open(path, 'wb') as f:
                     for chunk in response.iter_content(1024):
                         f.write(chunk)
-                if os.path.getsize(path) > MAX_VIDEO_SIZE:
+                if os.path.getsize(path) > MAX_FILE_SIZE:
                     await context.bot.edit_message_text(chat_id=query.message.chat_id, message_id=download_msg.message_id,
                                                       text=f"⚠️ Image {i+1} too large ({os.path.getsize(path)/1024/1024:.1f}MB)")
                     continue
@@ -1689,17 +1562,17 @@ async def download_and_send_images(query, context: ContextTypes.DEFAULT_TYPE, im
         await context.bot.edit_message_text(chat_id=query.message.chat_id, message_id=download_msg.message_id,
                                           text=f"❌ Failed to download images: {str(e)}")
 
-async def download_and_send_media_group(query, context: ContextTypes.DEFAULT_TYPE, media_urls: list):
+async def download_and_send_media_group(query, context: ContextTypes.DEFAULT_TYPE, options: dict):
     download_msg = await query.edit_message_text("⏳ Downloading media group...")
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
             media_paths = []
-            for i, url in enumerate(media_urls):
+            for i, url in enumerate(options.get('videos', []) + options.get('images', [])):
                 response = await asyncio.get_event_loop().run_in_executor(
                     executor, lambda: requests.get(url, stream=True, timeout=30)
                 )
                 response.raise_for_status()
-                ext = '.mp4' if url.endswith('.mp4') else '.jpg'
+                ext = '.mp4' if '.mp4' in url else '.jpg'
                 raw_path = os.path.join(temp_dir, f"media_{i}_raw{ext}")
                 final_path = os.path.join(temp_dir, f"media_{i}{ext}")
                 with open(raw_path, 'wb') as f:
@@ -1710,7 +1583,7 @@ async def download_and_send_media_group(query, context: ContextTypes.DEFAULT_TYP
                         final_path = raw_path
                 else:
                     final_path = raw_path
-                if os.path.getsize(final_path) > MAX_VIDEO_SIZE:
+                if os.path.getsize(final_path) > MAX_FILE_SIZE:
                     await context.bot.edit_message_text(chat_id=query.message.chat_id, message_id=download_msg.message_id,
                                                       text=f"⚠️ Media {i+1} too large ({os.path.getsize(final_path)/1024/1024:.1f}MB)")
                     continue
