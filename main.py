@@ -1134,13 +1134,12 @@
 
 
 import logging
-import yt_dlp
 import os
 import tempfile
 import subprocess
 import requests
 from bs4 import BeautifulSoup
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaVideo
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from telegram.error import Conflict
 import asyncio
@@ -1174,12 +1173,13 @@ executor = ThreadPoolExecutor(max_workers=4)
 # Constants
 MAX_VIDEO_SIZE = 50 * 1024 * 1024
 MAX_PREMIUM_SIZE = 100 * 1024 * 1024
-SUPPORTED_PLATFORMS = ["TikTok", "Twitter", "Instagram", "Facebook"]  # Removed Twitch and Reddit
+SUPPORTED_PLATFORMS = ["TikTok", "YouTube", "Twitter", "Instagram", "Facebook"]
 PREMIUM_FEATURES = ["Video Generation", "Image Generation", "Larger File Downloads", "Batch Processing", "Priority Support"]
-TIKSAVE_URL = "https://tiksave.io/en"
-TIKSAVE_MP3_URL = "https://tiksave.io/en/download-tiktok-mp3"
-INSTAGRAM_DOWNLOADER_URL = "https://fastdl.app/en"
+TIKTOK_DOWNLOADER_URL = "https://downloader.bot/en"
+YOUTUBE_DOWNLOADER_URL = "https://www.y2mate.com/en949"
 TWITTER_DOWNLOADER_URL = "https://x-downloader.com/"
+INSTAGRAM_DOWNLOADER_URL = "https://fastdl.app/en"
+FACEBOOK_DOWNLOADER_URL = "https://fdown.net/"
 
 async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, **kwargs):
     try:
@@ -1237,15 +1237,15 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "*How to Download Videos:*\n"
         "1. Send me a video URL from any supported platform\n"
         "2. I'll detect it automatically and show options\n"
-        "3. Choose to download as video or audio\n"
-        "4. Wait for processing (usually takes a few seconds)\n"
+        "3. Choose to download as video, audio, or images\n"
+        "4. For videos, select quality if available\n"
         "5. Receive your file directly in chat\n\n"
         "*Supported Platforms:*\n"
         f"{', '.join(SUPPORTED_PLATFORMS)}\n\n"
         "*Advanced Features:*\n"
-        "• Multiple quality options (for supported platforms)\n"
-        "• Video information extraction (duration, views, etc.)\n"
-        "• High-quality audio extraction (up to 320kbps)\n\n"
+        "• Multiple quality options for YouTube\n"
+        "• Image downloads from TikTok and Instagram\n"
+        "• High-quality audio extraction\n\n"
         "⚠️ *Limitations:*\n"
         "• Free users: 50MB file size limit\n"
         "• Some platforms may have restrictions\n\n"
@@ -1256,12 +1256,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     about_text = (
         "🤖 *Ultimate Media Bot*\n\n"
-        "*Version:* 1.0.0\n"
+        "*Version:* 1.0.1\n"
         "*Last Updated:* April 2025\n\n"
         "*Core Features:*\n"
         "• Video downloading from supported platforms\n"
         "• Audio extraction with quality options\n"
-        "• Video information display\n\n"
+        "• Image downloading\n\n"
         "*Technologies Used:*\n"
         "• Python 3.10+\n"
         "• python-telegram-bot\n"
@@ -1278,8 +1278,8 @@ async def features_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "*Current Features:*\n"
         "• Video downloading from supported platforms\n"
         "• Audio extraction (MP3 format)\n"
-        "• Video information display\n"
-        "• Quality selection (when available)\n"
+        "• Image downloading (TikTok, Instagram)\n"
+        "• Quality selection for YouTube\n"
         "• 50MB file size limit\n\n"
         "*Coming Soon:*\n"
         f"• {' | '.join(PREMIUM_FEATURES)}\n"
@@ -1307,70 +1307,106 @@ def is_valid_url(url: str) -> bool:
     url_pattern = re.compile(r'^(https?://)?([A-Z0-9-]+\.)+[A-Z]{2,6}(:\d+)?(/.*)?$', re.IGNORECASE)
     return bool(url_pattern.match(url))
 
-async def get_tiksave_download_url(tiktok_url: str, format_type: str) -> str:
-    """Fetch TikTok video or audio URL from TikSave."""
+async def get_tiktok_options(tiktok_url: str) -> dict:
+    """Fetch TikTok download options from downloader.bot."""
     try:
-        url = TIKSAVE_MP3_URL if format_type == "audio" else TIKSAVE_URL
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': url,
-            'Origin': 'https://tiksave.io'
+            'Referer': TIKTOK_DOWNLOADER_URL,
+            'Origin': 'https://downloader.bot'
         }
         data = {'url': tiktok_url}
         
         response = await asyncio.get_event_loop().run_in_executor(
             executor, 
-            lambda: requests.post(url, data=data, headers=headers, timeout=30)
+            lambda: requests.post(TIKTOK_DOWNLOADER_URL, data=data, headers=headers, timeout=30)
         )
         
         if response.status_code != 200:
-            raise Exception(f"TikSave request failed with status {response.status_code}")
+            raise Exception(f"TikTok downloader request failed with status {response.status_code}")
             
         soup = BeautifulSoup(response.text, 'html.parser')
-        if format_type == "audio":
-            download_button = soup.find('a', string=re.compile('Download MP3'))
-        else:
-            download_button = soup.find('a', string=re.compile('Download MP4 \\[1\\]'))
         
-        if not download_button or 'href' not in download_button.attrs:
-            raise Exception(f"No {'MP3' if format_type == 'audio' else 'MP4 [1]'} download link found in TikSave response")
-            
-        return download_button['href']
+        # Placeholder parsing - adjust based on actual HTML
+        video_link = None
+        audio_link = None
+        image_links = []
+        
+        for a in soup.find_all('a', href=True):
+            href = a['href']
+            text = a.text.lower()
+            if 'video' in text:
+                video_link = href
+            elif 'music' in text or 'mp3' in text:
+                audio_link = href
+            elif 'image' in text:
+                image_links.append(href)
+        
+        options = {}
+        if video_link:
+            options['video'] = video_link
+        if audio_link:
+            options['audio'] = audio_link
+        if image_links:
+            options['images'] = image_links
+        
+        return options
     except Exception as e:
-        logger.error(f"TikSave failed for {format_type}: {e}")
-        return None
+        logger.error(f"Failed to get TikTok options: {e}")
+        return {}
 
-async def get_instagram_download_url(instagram_url: str) -> str:
-    """Fetch Instagram video URL from FastDL."""
+async def get_youtube_options(youtube_url: str) -> dict:
+    """Fetch YouTube download options from y2mate."""
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': INSTAGRAM_DOWNLOADER_URL,
-            'Origin': 'https://fastdl.app'
+            'Referer': YOUTUBE_DOWNLOADER_URL,
+            'Origin': 'https://www.y2mate.com'
         }
-        data = {'url': instagram_url}
+        data = {'url': youtube_url}
         
         response = await asyncio.get_event_loop().run_in_executor(
             executor, 
-            lambda: requests.post(INSTAGRAM_DOWNLOADER_URL, data=data, headers=headers, timeout=30)
+            lambda: requests.post(YOUTUBE_DOWNLOADER_URL, data=data, headers=headers, timeout=30)
         )
         
         if response.status_code != 200:
-            raise Exception(f"FastDL request failed with status {response.status_code}")
+            raise Exception(f"YouTube downloader request failed with status {response.status_code}")
             
         soup = BeautifulSoup(response.text, 'html.parser')
-        download_button = soup.find('a', class_='download-button')
         
-        if not download_button or 'href' not in download_button.attrs:
-            raise Exception("No download link found in FastDL response")
-            
-        return download_button['href']
+        # Placeholder parsing - adjust based on actual HTML
+        qualities = []
+        audio_link = None
+        
+        quality_table = soup.find('table', class_='table')
+        if quality_table:
+            for row in quality_table.find_all('tr'):
+                cells = row.find_all('td')
+                if len(cells) >= 3:
+                    resolution = cells[0].text.strip()
+                    if 'mp4' in cells[1].text.lower():
+                        download_button = cells[2].find('a', href=True)
+                        if download_button:
+                            qualities.append({'resolution': resolution, 'url': download_button['href']})
+                    elif 'mp3' in cells[1].text.lower():
+                        download_button = cells[2].find('a', href=True)
+                        if download_button:
+                            audio_link = download_button['href']
+        
+        options = {}
+        if qualities:
+            options['qualities'] = qualities
+        if audio_link:
+            options['audio'] = audio_link
+        
+        return options
     except Exception as e:
-        logger.error(f"FastDL failed: {e}")
-        return None
+        logger.error(f"Failed to get YouTube options: {e}")
+        return {}
 
-async def get_twitter_download_url(twitter_url: str, format_type: str) -> str:
-    """Fetch Twitter video or audio URL from X-Downloader."""
+async def get_twitter_options(twitter_url: str) -> dict:
+    """Fetch Twitter download options from x-downloader.com."""
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -1385,24 +1421,103 @@ async def get_twitter_download_url(twitter_url: str, format_type: str) -> str:
         )
         
         if response.status_code != 200:
-            raise Exception(f"X-Downloader request failed with status {response.status_code}")
+            raise Exception(f"Twitter downloader request failed with status {response.status_code}")
             
         soup = BeautifulSoup(response.text, 'html.parser')
-        if format_type == "audio":
-            download_button = soup.find('a', string=re.compile('Download MP3'))
-        else:
-            download_button = soup.find('a', string=re.compile('Download MP4'))
         
-        if not download_button or 'href' not in download_button.attrs:
-            raise Exception(f"No {'MP3' if format_type == 'audio' else 'MP4'} download link found in X-Downloader response")
-            
-        return download_button['href']
+        # Placeholder parsing - adjust based on actual HTML
+        video_link = None
+        audio_link = None
+        
+        for a in soup.find_all('a', href=True):
+            href = a['href']
+            text = a.text.lower()
+            if 'mp4' in text:
+                video_link = href
+            elif 'mp3' in text:
+                audio_link = href
+        
+        options = {}
+        if video_link:
+            options['video'] = video_link
+        if audio_link:
+            options['audio'] = audio_link
+        
+        return options
     except Exception as e:
-        logger.error(f"X-Downloader failed for {format_type}: {e}")
-        return None
+        logger.error(f"Failed to get Twitter options: {e}")
+        return {}
+
+async def get_instagram_options(instagram_url: str) -> dict:
+    """Fetch Instagram download options from fastdl.app."""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': INSTAGRAM_DOWNLOADER_URL,
+            'Origin': 'https://fastdl.app'
+        }
+        data = {'url': instagram_url}
+        
+        response = await asyncio.get_event_loop().run_in_executor(
+            executor, 
+            lambda: requests.post(INSTAGRAM_DOWNLOADER_URL, data=data, headers=headers, timeout=30)
+        )
+        
+        if response.status_code != 200:
+            raise Exception(f"Instagram downloader request failed with status {response.status_code}")
+            
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Placeholder parsing - adjust based on actual HTML
+        media_links = []
+        
+        for a in soup.find_all('a', href=True, class_='download-button'):
+            href = a['href']
+            if href.endswith(('.mp4', '.jpg', '.jpeg', '.png')):
+                media_links.append(href)
+        
+        options = {'media': media_links} if media_links else {}
+        return options
+    except Exception as e:
+        logger.error(f"Failed to get Instagram options: {e}")
+        return {}
+
+async def get_facebook_options(facebook_url: str) -> dict:
+    """Fetch Facebook download options from fdown.net."""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': FACEBOOK_DOWNLOADER_URL,
+            'Origin': 'https://fdown.net'
+        }
+        data = {'url': facebook_url}
+        
+        response = await asyncio.get_event_loop().run_in_executor(
+            executor, 
+            lambda: requests.post(FACEBOOK_DOWNLOADER_URL, data=data, headers=headers, timeout=30)
+        )
+        
+        if response.status_code != 200:
+            raise Exception(f"Facebook downloader request failed with status {response.status_code}")
+            
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Placeholder parsing - adjust based on actual HTML
+        video_link = None
+        
+        for a in soup.find_all('a', href=True):
+            if 'download' in a.text.lower() and a['href'].endswith('.mp4'):
+                video_link = a['href']
+                break
+        
+        options = {'video': video_link} if video_link else {}
+        return options
+    except Exception as e:
+        logger.error(f"Failed to get Facebook options: {e}")
+        return {}
 
 async def convert_video(input_path: str, output_path: str) -> bool:
-    """Convert video to WhatsApp-compatible format using FFmpeg. Returns True if successful, False if failed."""
+    """Convert video to WhatsApp-compatible format using FFmpeg."""
     try:
         if not os.path.exists(input_path) or os.path.getsize(input_path) == 0:
             raise Exception("Input video file is empty or missing")
@@ -1426,7 +1541,6 @@ async def convert_video(input_path: str, output_path: str) -> bool:
             return False
 
         return True
-
     except subprocess.TimeoutExpired:
         logger.error("FFmpeg conversion timed out after 120 seconds")
         return False
@@ -1438,7 +1552,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message_text = update.message.text
     if not is_valid_url(message_text):
         await update.message.reply_text(
-            "Please send me a valid video URL from platforms like TikTok, Twitter, etc.\n\n"
+            "Please send me a valid video URL from platforms like TikTok, YouTube, etc.\n\n"
             "Use /help for complete instructions."
         )
         return
@@ -1449,70 +1563,45 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['chat_id'] = update.message.chat_id
     
     try:
-        info_dict = {}
         platform = next((p for p in SUPPORTED_PLATFORMS if p.lower() in message_text.lower()), "Other")
+        options = {}
         
         if platform == "TikTok":
-            # For TikTok, we'll fetch metadata using the video downloader
-            download_url = await get_tiksave_download_url(message_text, "video")
-            if download_url:
-                info_dict = {
-                    'title': 'TikTok Video',
-                    'duration': 0,
-                    'extractor': 'TikTok',
-                    'download_url': download_url
-                }
-            else:
-                raise Exception("Failed to process TikTok URL with TikSave")
-        elif platform == "Instagram":
-            download_url = await get_instagram_download_url(message_text)
-            if download_url:
-                info_dict = {
-                    'title': 'Instagram Video',
-                    'duration': 0,
-                    'extractor': 'Instagram',
-                    'download_url': download_url
-                }
-            else:
-                raise Exception("Failed to process Instagram URL with FastDL")
+            options = await get_tiktok_options(message_text)
+        elif platform == "YouTube":
+            options = await get_youtube_options(message_text)
         elif platform == "Twitter":
-            download_url = await get_twitter_download_url(message_text, "video")
-            if download_url:
-                info_dict = {
-                    'title': 'Twitter Video',
-                    'duration': 0,
-                    'extractor': 'Twitter',
-                    'download_url': download_url
-                }
-            else:
-                raise Exception("Failed to process Twitter URL with X-Downloader")
+            options = await get_twitter_options(message_text)
+        elif platform == "Instagram":
+            options = await get_instagram_options(message_text)
         elif platform == "Facebook":
-            # Fallback to yt-dlp for Facebook (no alternative downloader provided)
-            try:
-                with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
-                    info_dict = await asyncio.get_event_loop().run_in_executor(
-                        executor, lambda: ydl.extract_info(message_text, download=False)
-                    )
-            except Exception as e:
-                logger.error(f"yt-dlp failed for Facebook: {e}")
-                raise Exception(f"Failed to process Facebook URL: {str(e)}")
+            options = await get_facebook_options(message_text)
         else:
             raise Exception(f"Unsupported platform: {platform}")
         
-        context.user_data['video_info'] = info_dict
-        keyboard = [
-            [InlineKeyboardButton("🎬 Download Video", callback_data="video"),
-             InlineKeyboardButton("🎵 Download Audio (MP3)", callback_data="audio")],
-            [InlineKeyboardButton("ℹ️ Video Info", callback_data="info"),
-             InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
-        ]
-        duration = info_dict.get('duration')
-        duration_str = f"{int(duration // 60)}:{int(duration % 60):02d}" if duration else "Unknown"
+        if not options:
+            raise Exception(f"Failed to fetch download options for {platform}")
+        
+        context.user_data['download_options'] = options
+        context.user_data['platform'] = platform.lower()
+        
+        keyboard = []
+        if 'video' in options:
+            keyboard.append([InlineKeyboardButton("🎬 Download Video", callback_data=f"{platform.lower()}_video")])
+        if 'audio' in options:
+            keyboard.append([InlineKeyboardButton("🎵 Download Audio", callback_data=f"{platform.lower()}_audio")])
+        if 'images' in options:
+            keyboard.append([InlineKeyboardButton("🖼️ Download Images", callback_data=f"{platform.lower()}_images")])
+        if 'qualities' in options:
+            keyboard.append([InlineKeyboardButton("🎬 Select Video Quality", callback_data=f"{platform.lower()}_select_quality")])
+        if 'media' in options:
+            keyboard.append([InlineKeyboardButton("📦 Download All Media", callback_data=f"{platform.lower()}_all_media")])
+        keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
         
         await context.bot.edit_message_text(
             chat_id=update.message.chat_id,
             message_id=processing_msg.message_id,
-            text=f"📋 *Video Found*\n\n*Title:* {info_dict.get('title', 'Video')}\n*Duration:* {duration_str}\n*Source:* {info_dict.get('extractor', platform)}\n\nSelect an option to continue:",
+            text=f"📋 *{platform} Content Found*\n\nSelect an option to continue:",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
@@ -1545,122 +1634,125 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ Session expired. Please send the URL again.")
         return
     
-    if query.data == "info":
-        await show_media_info(query, context)
-    elif query.data in ["video", "audio"]:
-        await start_download(query, context, query.data)
+    options = context.user_data.get('download_options', {})
+    platform = context.user_data.get('platform', '')
+    
+    if query.data == f"{platform}_video":
+        await start_download(query, context, options['video'], 'video')
+    elif query.data == f"{platform}_audio":
+        await start_download(query, context, options['audio'], 'audio')
+    elif query.data == f"{platform}_images":
+        await download_and_send_images(query, context, options['images'])
+    elif query.data == f"{platform}_select_quality" and 'qualities' in options:
+        qualities = options['qualities']
+        keyboard = [[InlineKeyboardButton(q['resolution'], callback_data=f"{platform}_quality_{i}")] for i, q in enumerate(qualities)]
+        keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+        await query.edit_message_text("Select video quality:", reply_markup=InlineKeyboardMarkup(keyboard))
+    elif query.data.startswith(f"{platform}_quality_"):
+        index = int(query.data.split('_')[-1])
+        if 'qualities' in options and 0 <= index < len(options['qualities']):
+            await start_download(query, context, options['qualities'][index]['url'], 'video')
+        else:
+            await query.edit_message_text("❌ Invalid quality selected.")
+    elif query.data == f"{platform}_all_media" and 'media' in options:
+        await download_and_send_media_group(query, context, options['media'])
 
-async def show_media_info(query, context: ContextTypes.DEFAULT_TYPE):
-    info_dict = context.user_data.get('video_info', {})
-    info_parts = ["📑 *Video Information*"]
-    
-    def add_field(name, value, formatter=None):
-        if value not in [None, 'Unknown', '']:
-            formatted = formatter(value) if formatter else str(value)
-            info_parts.append(f"*{name}:* {formatted}")
-    
-    add_field("Title", info_dict.get('title'))
-    duration = info_dict.get('duration')
-    if duration:
-        add_field("Duration", f"{int(duration // 60)}:{int(duration % 60):02d}")
-    add_field("Channel/Uploader", info_dict.get('uploader'))
-    
-    upload_date = info_dict.get('upload_date')
-    if upload_date and len(upload_date) == 8:
-        add_field("Upload Date", f"{upload_date[6:8]}/{upload_date[4:6]}/{upload_date[0:4]}")
-    
-    def format_count(count):
-        if isinstance(count, int):
-            return f"{count/1000000:.1f}M" if count >= 1000000 else f"{count/1000:.1f}K" if count >= 1000 else str(count)
-        return str(count)
-    
-    add_field("Views", info_dict.get('view_count'), format_count)
-    add_field("Likes", info_dict.get('like_count'), format_count)
-    add_field("Resolution", info_dict.get('resolution'))
-    add_field("FPS", info_dict.get('fps'))
-    
-    filesize = info_dict.get('filesize_approx')
-    if isinstance(filesize, (int, float)):
-        filesize_str = f"{filesize/1000000:.1f} MB" if filesize >= 1000000 else f"{filesize/1000:.1f} KB" if filesize >= 1000 else f"{filesize} bytes"
-        add_field("Estimated Size", filesize_str)
-    
-    if len(info_parts) == 1:
-        info_parts.append("\n⚠️ Couldn't retrieve detailed information")
-        info_parts.append("You can still try downloading the media")
-    
-    keyboard = [
-        [InlineKeyboardButton("🎬 Download Video", callback_data="video"),
-         InlineKeyboardButton("🎵 Download Audio", callback_data="audio")],
-        [InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
-    ]
-    
-    await query.edit_message_text("\n\n".join(info_parts), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-
-async def start_download(query, context: ContextTypes.DEFAULT_TYPE, format_type: str):
-    url = context.user_data.get('current_url')
+async def start_download(query, context: ContextTypes.DEFAULT_TYPE, download_url: str, format_type: str):
     download_msg = await query.edit_message_text(f"⏳ Starting {'audio' if format_type == 'audio' else 'video'} download...")
-    asyncio.create_task(download_and_send_media(url, format_type, MAX_VIDEO_SIZE, context, query.message.chat_id, download_msg.message_id))
+    asyncio.create_task(download_and_send_media(download_url, format_type, MAX_VIDEO_SIZE, context, query.message.chat_id, download_msg.message_id))
 
-async def download_and_send_media(url: str, format_type: str, max_size: int, 
+async def download_and_send_images(query, context: ContextTypes.DEFAULT_TYPE, image_urls: list):
+    download_msg = await query.edit_message_text("⏳ Downloading images...")
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image_paths = []
+            for i, url in enumerate(image_urls):
+                response = await asyncio.get_event_loop().run_in_executor(
+                    executor, lambda: requests.get(url, stream=True, timeout=30)
+                )
+                response.raise_for_status()
+                path = os.path.join(temp_dir, f"image_{i}.jpg")
+                with open(path, 'wb') as f:
+                    for chunk in response.iter_content(1024):
+                        f.write(chunk)
+                if os.path.getsize(path) > MAX_VIDEO_SIZE:
+                    await context.bot.edit_message_text(chat_id=query.message.chat_id, message_id=download_msg.message_id,
+                                                      text=f"⚠️ Image {i+1} too large ({os.path.getsize(path)/1024/1024:.1f}MB)")
+                    continue
+                image_paths.append(path)
+            
+            media_group = [InputMediaPhoto(open(path, 'rb')) for path in image_paths]
+            await context.bot.send_media_group(chat_id=query.message.chat_id, media=media_group)
+            await context.bot.delete_message(chat_id=query.message.chat_id, message_id=download_msg.message_id)
+    except Exception as e:
+        logger.error(f"Image download failed: {e}")
+        await context.bot.edit_message_text(chat_id=query.message.chat_id, message_id=download_msg.message_id,
+                                          text=f"❌ Failed to download images: {str(e)}")
+
+async def download_and_send_media_group(query, context: ContextTypes.DEFAULT_TYPE, media_urls: list):
+    download_msg = await query.edit_message_text("⏳ Downloading media group...")
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            media_paths = []
+            for i, url in enumerate(media_urls):
+                response = await asyncio.get_event_loop().run_in_executor(
+                    executor, lambda: requests.get(url, stream=True, timeout=30)
+                )
+                response.raise_for_status()
+                ext = '.mp4' if url.endswith('.mp4') else '.jpg'
+                raw_path = os.path.join(temp_dir, f"media_{i}_raw{ext}")
+                final_path = os.path.join(temp_dir, f"media_{i}{ext}")
+                with open(raw_path, 'wb') as f:
+                    for chunk in response.iter_content(1024):
+                        f.write(chunk)
+                if ext == '.mp4':
+                    if not await convert_video(raw_path, final_path):
+                        final_path = raw_path
+                else:
+                    final_path = raw_path
+                if os.path.getsize(final_path) > MAX_VIDEO_SIZE:
+                    await context.bot.edit_message_text(chat_id=query.message.chat_id, message_id=download_msg.message_id,
+                                                      text=f"⚠️ Media {i+1} too large ({os.path.getsize(final_path)/1024/1024:.1f}MB)")
+                    continue
+                media_paths.append((final_path, ext))
+            
+            media_group = []
+            for path, ext in media_paths:
+                with open(path, 'rb') as f:
+                    if ext == '.mp4':
+                        media_group.append(InputMediaVideo(f, supports_streaming=True))
+                    else:
+                        media_group.append(InputMediaPhoto(f))
+            await context.bot.send_media_group(chat_id=query.message.chat_id, media=media_group)
+            await context.bot.delete_message(chat_id=query.message.chat_id, message_id=download_msg.message_id)
+    except Exception as e:
+        logger.error(f"Media group download failed: {e}")
+        await context.bot.edit_message_text(chat_id=query.message.chat_id, message_id=download_msg.message_id,
+                                          text=f"❌ Failed to download media group: {str(e)}")
+
+async def download_and_send_media(download_url: str, format_type: str, max_size: int, 
                                 context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int):
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
-            platform = next((p for p in SUPPORTED_PLATFORMS if p.lower() in url.lower()), "Other")
             raw_file_path = os.path.join(temp_dir, f"raw_media.{format_type if format_type == 'audio' else 'video'}")
             final_file_path = os.path.join(temp_dir, f"final_media.{format_type if format_type == 'audio' else 'mp4'}")
-            info_dict = context.user_data.get('video_info', {})
             
-            # Step 1: Download the media
-            if platform == "TikTok":
-                download_url = await get_tiksave_download_url(url, format_type)
-                if not download_url:
-                    raise Exception(f"Failed to download TikTok {'audio' if format_type == 'audio' else 'video'} with TikSave")
-            elif platform == "Instagram" and format_type == "video":
-                download_url = await get_instagram_download_url(url)
-                if not download_url:
-                    raise Exception("Failed to download Instagram video with FastDL")
-            elif platform == "Twitter":
-                download_url = await get_twitter_download_url(url, format_type)
-                if not download_url:
-                    raise Exception(f"Failed to download Twitter {'audio' if format_type == 'audio' else 'video'} with X-Downloader")
-            elif platform == "Facebook":
-                ydl_opts = {
-                    'outtmpl': raw_file_path,
-                    'quiet': True,
-                    'format': 'bestvideo+bestaudio/best' if format_type == "video" else 'bestaudio/best',
-                }
-                if format_type == "audio":
-                    ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
-                try:
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        await asyncio.get_event_loop().run_in_executor(executor, lambda: ydl.download([url]))
-                    download_url = None  # Direct download to file
-                except Exception as e:
-                    raise Exception(f"Failed to download Facebook {'audio' if format_type == 'audio' else 'video'}: {str(e)}")
-            else:
-                raise Exception(f"Unsupported platform or format: {platform}, {format_type}")
-
-            # Download the file if a URL was provided
-            if download_url:
-                response = await asyncio.get_event_loop().run_in_executor(
-                    executor, lambda: requests.get(download_url, stream=True, timeout=30)
-                )
-                response.raise_for_status()
-                with open(raw_file_path, 'wb') as f:
-                    for chunk in response.iter_content(1024):
-                        f.write(chunk)
-
-            # Step 2: Convert the media if it's a video
+            response = await asyncio.get_event_loop().run_in_executor(
+                executor, lambda: requests.get(download_url, stream=True, timeout=30)
+            )
+            response.raise_for_status()
+            with open(raw_file_path, 'wb') as f:
+                for chunk in response.iter_content(1024):
+                    f.write(chunk)
+            
             if format_type == "video":
                 conversion_success = await convert_video(raw_file_path, final_file_path)
                 if not conversion_success:
                     logger.info("Conversion failed, falling back to raw file")
                     final_file_path = raw_file_path
             else:
-                # For audio, the file is already in MP3 format
                 final_file_path = raw_file_path
-
-            # Step 3: Check file size
+            
             if not os.path.exists(final_file_path):
                 raise Exception("Downloaded file is missing")
             file_size = os.path.getsize(final_file_path)
@@ -1668,23 +1760,15 @@ async def download_and_send_media(url: str, format_type: str, max_size: int,
                 await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, 
                                                   text=f"⚠️ File too large ({file_size/1024/1024:.1f}MB > {max_size/1024/1024:.1f}MB limit)")
                 return
-
-            # Step 4: Upload the media
+            
             await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="✅ Download complete! Now uploading...")
             with open(final_file_path, 'rb') as file:
                 if format_type == "audio":
-                    await context.bot.send_audio(chat_id=chat_id, audio=file, 
-                                               title=info_dict.get('title', 'Audio'),
-                                               performer=info_dict.get('uploader', 'Unknown'),
-                                               duration=int(info_dict.get('duration', 0)))
+                    await context.bot.send_audio(chat_id=chat_id, audio=file, title="Audio")
                 else:
-                    await context.bot.send_video(chat_id=chat_id, video=file, 
-                                               caption=f"🎬 {info_dict.get('title', 'Video')}",
-                                               duration=int(info_dict.get('duration', 0)), 
-                                               supports_streaming=True)
+                    await context.bot.send_video(chat_id=chat_id, video=file, caption="🎬 Video", supports_streaming=True)
             
             await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-
     except Exception as e:
         logger.error(f"Download failed: {e}")
         error_msg = f"❌ Failed to process URL: {str(e)}"
